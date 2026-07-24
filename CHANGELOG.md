@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.21.8
+
+- test: local test runs stop failing when native sqlite is built for Electron
+
+
 ## v0.21.7
 
 - ci: releases build their native dependency again by pinning npm to 11
