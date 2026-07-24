@@ -34,9 +34,17 @@ class PositionEmitter {
   #emitter: Emitter = new EventEmitter();
 
   /**
-   * @param beatSocket A UDP socket to receive position packets on port 50001
+   * Whether experimental Stagehand VU-meter (0x58) parsing is active.
    */
-  constructor(beatSocket: Socket) {
+  #stagehandMode: boolean;
+
+  /**
+   * @param beatSocket A UDP socket to receive position packets on port 50001
+   * @param stagehandMode Enable Stagehand-only VU-meter parsing. Off by default
+   *   so non-Stagehand connections behave as they did before Stagehand.
+   */
+  constructor(beatSocket: Socket, stagehandMode = false) {
+    this.#stagehandMode = stagehandMode;
     beatSocket.on('message', this.#handlePosition);
   }
 
@@ -46,8 +54,8 @@ class PositionEmitter {
   once: Emitter['once'] = this.#emitter.once.bind(this.#emitter);
 
   #handlePosition = (message: Buffer) => {
-    // Stagehand VU meter (type 0x58)
-    if (message.length >= 11 && message[10] === 0x58) {
+    // Stagehand VU meter (type 0x58) — only parsed in Stagehand mode.
+    if (this.#stagehandMode && message.length >= 11 && message[10] === 0x58) {
       const vu = vuFromPacket(message);
       if (vu !== undefined) {
         this.#emitter.emit('vu', vu);

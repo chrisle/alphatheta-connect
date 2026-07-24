@@ -181,9 +181,14 @@ export async function bringOnline(config?: NetworkConfig) {
     throw err;
   }
 
+  // Stagehand's experimental packet parsing (0x39 mixer state, 0x58 VU) is
+  // gated to Stagehand mode only. In 'active'/passive mode these emitters
+  // behave as they did before Stagehand was added.
+  const stagehandMode = config?.connectMethod === 'stagehand';
+
   const deviceManager = new DeviceManager(announceSocket);
-  const statusEmitter = new StatusEmitter(statusSocket);
-  const positionEmitter = new PositionEmitter(beatSocket);
+  const statusEmitter = new StatusEmitter(statusSocket, stagehandMode);
+  const positionEmitter = new PositionEmitter(beatSocket, stagehandMode);
 
   tx.finish();
 

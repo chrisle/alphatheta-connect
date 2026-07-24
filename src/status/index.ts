@@ -54,10 +54,22 @@ class StatusEmitter {
   #mediaSlotQueryLock = new Mutex();
 
   /**
-   * @param statusSocket A UDP socket to receive CDJ status packets on
+   * Whether the experimental Stagehand mixer-state (0x39) parsing is active.
+   * Only true when the network was brought online in 'stagehand' mode.
    */
-  constructor(statusSocket: Socket) {
+  #stagehandMode: boolean;
+
+  /**
+   * @param statusSocket A UDP socket to receive CDJ status packets on
+   * @param stagehandMode Enable Stagehand-only mixer-state parsing. Off by
+   *   default so 'active' and passive connections behave exactly as they did
+   *   before Stagehand was added — the 0x39 layout is reverse-engineered from a
+   *   DJM-A9 and must not be applied to other mixers (e.g. XDJ-AZ) that were
+   *   never captured.
+   */
+  constructor(statusSocket: Socket, stagehandMode = false) {
     this.#statusSocket = statusSocket;
+    this.#stagehandMode = stagehandMode;
     statusSocket.on('message', this.#handleStatus);
   }
 
@@ -86,8 +98,11 @@ class StatusEmitter {
   ) => void;
 
   #handleStatus = (message: Buffer) => {
-    // Stagehand mixer state (type 0x39)
-    if (message.length >= 11 && message[10] === 0x39) {
+    // Stagehand mixer state (type 0x39). Only parsed in Stagehand mode — the
+    // layout is DJM-A9-specific and applying it to other mixers misreads their
+    // faders (NP3-327). In 'active'/passive mode we fall back to the on-air
+    // flag, which is how on-air detection worked before Stagehand.
+    if (this.#stagehandMode && message.length >= 11 && message[10] === 0x39) {
       const mixerState = mixerStateFromPacket(message);
       if (mixerState !== undefined) {
         return this.#emitter.emit('mixerState', mixerState);
