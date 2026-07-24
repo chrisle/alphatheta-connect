@@ -78,23 +78,19 @@ class StatusEmitter {
   // type out of strict-event-emitter-types degrades to its unique-symbol
   // compatibility overload under newer TypeScript, so consumers calling
   // `.on('status', …)` would fail to typecheck. The runtime is unchanged.
-  on = this.#emitter.addListener.bind(this.#emitter) as <
-    E extends keyof StatusEvents,
-  >(
+  on = this.#emitter.addListener.bind(this.#emitter) as <E extends keyof StatusEvents>(
     event: E,
-    listener: StatusEvents[E],
+    listener: StatusEvents[E]
   ) => void;
   off = this.#emitter.removeListener.bind(this.#emitter) as <
     E extends keyof StatusEvents,
   >(
     event: E,
-    listener: StatusEvents[E],
+    listener: StatusEvents[E]
   ) => void;
-  once = this.#emitter.once.bind(this.#emitter) as <
-    E extends keyof StatusEvents,
-  >(
+  once = this.#emitter.once.bind(this.#emitter) as <E extends keyof StatusEvents>(
     event: E,
-    listener: StatusEvents[E],
+    listener: StatusEvents[E]
   ) => void;
 
   #handleStatus = (message: Buffer) => {

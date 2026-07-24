@@ -1,7 +1,7 @@
-import {EventEmitter} from 'events';
 import type {Socket} from 'dgram';
-
 import {describe, expect, it, vi} from 'vitest';
+
+import {EventEmitter} from 'events';
 
 import {PROLINK_HEADER} from 'src/constants';
 
