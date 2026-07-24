@@ -37,13 +37,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          # Must stay on the latest 22.x: npm@latest (installed below for OIDC
-          # trusted publishing) requires node ^22.22.2 || ^24.15.0 || >=26.0.0.
+          # Latest 22.x rather than a pinned patch, so newer npm releases keep
+          # installing (npm 12 requires node ^22.22.2 || ^24.15.0 || >=26.0.0).
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
 
+      # npm 11.5.1+ is what OIDC trusted publishing needs. Pinned to 11 because
+      # npm 12 blocks dependency install scripts unless they are listed in
+      # allowScripts, which stops better-sqlite3-multiple-ciphers (a
+      # onelibrary-connect dependency) from compiling its native binding.
       - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Build metadata-connect
         working-directory: metadata-connect
