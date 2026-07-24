@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.21.7
+
+- ci: releases build their native dependency again by pinning npm to 11
+- style: fix lint errors blocking the build workflow
+- ci: npm publishes succeed again by running the release job on the latest Node 22
+- fix: only run experimental Stagehand packet parsing in stagehand mode
+
+
 ## v0.21.6
 
 - chore: sync lockfiles to onelibrary-connect 1.1.3
