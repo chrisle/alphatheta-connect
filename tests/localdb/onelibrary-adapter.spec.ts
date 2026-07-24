@@ -13,10 +13,14 @@ import * as path from 'path';
 import {OneLibraryAdapter} from 'src/localdb/onelibrary';
 import {CueAndLoop} from 'src/types';
 
+import {describeWithOneLibraryDb} from './native-sqlite';
+
 const FIXTURE_DB = path.join(__dirname, 'fixtures', 'test-onelibrary.db');
 
 // Skip if fixture doesn't exist (run create-test-db.ts first)
-const describeIfFixture = fs.existsSync(FIXTURE_DB) ? describe : describe.skip;
+const describeIfFixture = fs.existsSync(FIXTURE_DB)
+  ? describeWithOneLibraryDb
+  : describe.skip;
 
 describeIfFixture('OneLibraryAdapter', () => {
   let adapter: OneLibraryAdapter;

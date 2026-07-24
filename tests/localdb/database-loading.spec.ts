@@ -11,6 +11,8 @@ import * as path from 'path';
 import {OneLibraryAdapter} from 'src/localdb/onelibrary';
 import {DeviceType, MediaSlot, TrackType} from 'src/types';
 
+import {describeWithOneLibraryDb} from './native-sqlite';
+
 // Import test database path
 const TEST_DB_PATH = path.join(__dirname, 'fixtures', 'test-onelibrary.db');
 
@@ -18,7 +20,7 @@ describe('Database Loading', () => {
   // ==========================================================================
   // OneLibraryAdapter Direct Tests
   // ==========================================================================
-  describe('OneLibraryAdapter', () => {
+  describeWithOneLibraryDb('OneLibraryAdapter', () => {
     let adapter: OneLibraryAdapter | null = null;
 
     afterEach(() => {

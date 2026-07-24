@@ -9,10 +9,12 @@ import * as path from 'path';
 
 import {OneLibraryAdapter} from 'src/localdb/onelibrary';
 
+import {describeWithOneLibraryDb} from './native-sqlite';
+
 // Import test database path
 const TEST_DB_PATH = path.join(__dirname, 'fixtures', 'test-onelibrary.db');
 
-describe('Edge Cases and Error Handling', () => {
+describeWithOneLibraryDb('Edge Cases and Error Handling', () => {
   // ==========================================================================
   // OneLibraryAdapter Edge Cases
   // ==========================================================================
