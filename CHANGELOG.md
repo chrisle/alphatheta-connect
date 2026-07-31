@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.21.9
+
+- chore: lockfiles pick up metadata-connect 1.1.11
+
+
 ## v0.21.8
 
 - test: local test runs stop failing when native sqlite is built for Electron
