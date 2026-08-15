@@ -166,3 +166,53 @@ await network.control.setPreference(cdjDevice, { quantize: 1 }); // Quantize ind
 To preserve backwards-compatibility and maintain documentation integrity:
 - Existing active (`vcdjId` < 7) and passive modes remain fully supported and completely untouched.
 - `network.control.setPlayState(device, state)` works out-of-the-box regardless of your connection mode, automatically translating state mappings into correct network packets.
+
+---
+
+## 6. Real Hardware Testing Notes (contributed)
+
+> Captured from a CDJ-3000 (player 4, firmware 3.18) with the official Stagehand
+> iPad app as baseline, using layer-2 MAC takeover for unicast capture.
+
+### 6.1 Observed gaps vs. real Stagehand traffic
+
+Running the Stagehand connection mode against real hardware, the CDJ silently
+ignores the 0x07 transport commands. The official app sends several packet types
+that this library currently does not:
+
+- **0x68 registration report** (36B, every 2s, unicast to CDJ:50002 + broadcast).
+  Layout (0-based): `header | 0x68 | name19B | [30]=target player num | 01 00 3a 00 00`.
+- **0x3c state-sync request** (36B -> 50002; identical to 0x68 except [31]=0x01).
+  Sent when the app enters the WAVEFORM screen. After the iPad screen sleeps and
+  wakes, control is ignored by the CDJ until this packet is sent and the waveform
+  reloads — then control works again.
+- **0x55 state-report sequence** (44B -> 50002): sub-byte [40] progresses
+  0x01/0x06 (startup) -> 0x05 -> 0x08 (repeated) -> 0x09 (after LIVE switch off).
+- **0x6b preference write is 116B**, not 124B.
+- The 0x07 transport packet on hardware is **48B with a 19B name region**, not
+  56B/20B: `[30]=player num [31]=0x01 [32]=0x00 [33]=correlation [34]=0x00
+  [35]=0x30 [36-38]=0x00 [39]=0x3a [40]=0x00 [41]=0x01 [42]=0x00 [43]=op
+  [44]=0x00 [45]=press [46]=0x00 [47]=0x00`.
+
+### 6.2 CDJ -> controller observations
+
+- **0x69** (54B -> 50002): session token, bytes 40-43 change per session
+  (e.g. `31 e5 ff da`, `32 c8 ff bf`), byte 49 = 0x7f constant. Repeated a few
+  times per session (periodically and around button presses), not once.
+- **0x0b** (60B -> 50001): beat/state stream (~32/s) sent only to the accepted
+  controller. Byte 33 cycles through 8 values (92/98/b4/ad/f6/d6/99/cd).
+- **0x0a**: 60B static heartbeat, plus a 1116B full announcement broadcast while
+  a controller is online (17 varying bytes, firmware string near byte 118).
+- All traffic is UDP.
+
+### 6.3 Open question
+
+Even after replicating every observed packet byte-for-byte (0x0a/0x02/0x06/
+0x68/0x55 sequence/0x3c/0x6b/0x07) with random source ports, random protocol MAC
+and dev_id, and fully impersonating the iPad's Ethernet MAC + IP (iPad offline),
+the CDJ never issues 0x69 or the 0x0b stream to the client and never executes
+commands. The per-command byte 33 ("correlation") changes per session and per
+opcode (session A: play=0x9e, pause=0x93; session B: play=0x93, pause=0x94;
+skip=e0/e3), suggesting it is derived from the 0x69 token — a chicken-and-egg we
+could not close. Any insight into how the CDJ gates acceptance of a Stagehand
+client would be greatly appreciated.
