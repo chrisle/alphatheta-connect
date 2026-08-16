@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.21.10
+
+- docs: an example turns rekordbox waveform bytes into a picture you can look at
+- chore: .DS_Store no longer rides along in every checkout
+
+
 ## v0.21.9
 
 - chore: lockfiles pick up metadata-connect 1.1.11
