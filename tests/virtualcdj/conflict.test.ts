@@ -2,7 +2,7 @@ import {Socket} from 'dgram';
 
 import {PROLINK_HEADER} from 'src/constants';
 import DeviceManager from 'src/devices';
-import {Device} from 'src/types';
+import {Device, DeviceType} from 'src/types';
 import {Announcer, getVirtualCDJ} from 'src/virtualcdj';
 
 /**
@@ -31,7 +31,10 @@ describe('Announcer device ID conflicts', () => {
     return packet;
   };
 
-  const setup = (vcdjId: number, peers: number[], fullStartup = true) => {
+  /** A peer as [device id, model name]; names are matched to channel counts. */
+  type Peer = number | [number, string];
+
+  const setup = (vcdjId: number, peers: Peer[], fullStartup = true) => {
     let messageHandler: ((msg: Buffer) => void) | undefined;
 
     const mockSocket = {
@@ -45,7 +48,16 @@ describe('Announcer device ID conflicts', () => {
     } as unknown as Socket;
 
     const devices = new Map<number, Device>(
-      peers.map(id => [id, getVirtualCDJ(mockIface, id, `CDJ-${id}`)])
+      peers.map(peer => {
+        const [id, name] = Array.isArray(peer) ? peer : [peer, `CDJ-${peer}`];
+        const device = getVirtualCDJ(mockIface, id, name);
+        // Mixers announce as their own device type, which is what tells the
+        // announcer how many player numbers the rig can hand out.
+        if (name.startsWith('DJM') || name === 'EUPHONIA') {
+          device.type = DeviceType.Mixer;
+        }
+        return [id, device];
+      })
     );
     const mockDeviceManager = {devices} as unknown as DeviceManager;
 
@@ -173,6 +185,28 @@ describe('Announcer device ID conflicts', () => {
     announcer.stop();
 
     expect(mockSocket.off).toHaveBeenCalledWith('message', expect.any(Function));
+  });
+
+  it('moves above the mixer, not just to the next free number', () => {
+    // A DJM-V10 can assign every number 1-6, so 6 sitting free is not ours to
+    // take — the player on channel 6 would arrive and contest it too.
+    const {announcer, vcdj, sendConflict} = setup(5, [1, 2, 5, [33, 'DJM-V10']]);
+
+    announcer.start();
+    sendConflict(5);
+    announcer.stop();
+
+    expect(vcdj.id).toBe(7);
+  });
+
+  it('stays in the remotedb range when the mixer leaves room', () => {
+    const {announcer, vcdj, sendConflict} = setup(5, [1, 2, 5, [33, 'DJM-A9']]);
+
+    announcer.start();
+    sendConflict(5);
+    announcer.stop();
+
+    expect(vcdj.id).toBe(6);
   });
 
   it('watches for conflicts even without the full startup protocol', () => {

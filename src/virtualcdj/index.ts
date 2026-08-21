@@ -15,7 +15,11 @@ import DeviceManager from 'src/devices';
 import {type Logger, noopLogger} from 'src/logger';
 import {Device, DeviceID, DeviceType} from 'src/types';
 import {buildName, getBroadcastAddress} from 'src/utils';
-import {pickAvailableDeviceId, REMOTEDB_MAX_DEVICE_ID} from 'src/virtualcdj/device-id';
+import {
+  pickAvailableDeviceId,
+  playerNumberCeiling,
+  REMOTEDB_MAX_DEVICE_ID,
+} from 'src/virtualcdj/device-id';
 
 /**
  * Constructs a virtual CDJ Device.
@@ -430,10 +434,18 @@ export class Announcer {
     // Stay in whichever range we were already in. Dropping out of 1-6 would
     // silently lose remotedb metadata for unanalyzed and streaming tracks, so
     // a conflict on player 5 looks for another free player number first.
-    const usedIds = [...this.#deviceManager.devices.values()].map(d => d.id);
-    const newId = pickAvailableDeviceId(usedIds, {
-      preferRemoteDb: this.#vcdj.id <= REMOTEDB_MAX_DEVICE_ID,
-    });
+    //
+    // The mixer decides which of those numbers are actually safe: a player can
+    // only be assigned a number its mixer has a channel for, so anything above
+    // that is out of reach of the rig that just contested us.
+    const devices = [...this.#deviceManager.devices.values()];
+    const newId = pickAvailableDeviceId(
+      devices.map(d => d.id),
+      {
+        preferRemoteDb: this.#vcdj.id <= REMOTEDB_MAX_DEVICE_ID,
+        playerCeiling: playerNumberCeiling(devices),
+      }
+    );
 
     if (newId === null) {
       this.#logger.error('No available device IDs. All 32 slots are occupied.');
