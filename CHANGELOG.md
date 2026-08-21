@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.23.0
+
+- feat: the player number auto-picks from the mixer's channel count
+
+
 ## v0.22.0
 
 - fix: a player number conflict is now answered whenever it happens
