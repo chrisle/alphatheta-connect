@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.23.1
+
+- test: player number selection is checked against real announce packets
+
+
 ## v0.23.0
 
 - feat: the player number auto-picks from the mixer's channel count
