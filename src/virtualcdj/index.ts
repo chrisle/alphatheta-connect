@@ -15,6 +15,7 @@ import DeviceManager from 'src/devices';
 import {type Logger, noopLogger} from 'src/logger';
 import {Device, DeviceID, DeviceType} from 'src/types';
 import {buildName, getBroadcastAddress} from 'src/utils';
+import {pickAvailableDeviceId, REMOTEDB_MAX_DEVICE_ID} from 'src/virtualcdj/device-id';
 
 /**
  * Constructs a virtual CDJ Device.
@@ -375,6 +376,8 @@ export class Announcer {
   }
 
   start() {
+    this.#armConflictListener();
+
     if (this.#fullStartup) {
       this.#startFullStartup();
     } else {
@@ -383,13 +386,18 @@ export class Announcer {
   }
 
   /**
-   * Start the full startup protocol with stage progression.
+   * Listen for another device defending the ID we are announcing as.
+   *
+   * The listener stays armed for the announcer's whole life, not just during
+   * startup. A player that powers on after us can claim our ID at any point,
+   * and until it is answered both devices fight over the slot — which is what
+   * knocks a live CDJ off the network.
    */
-  #startFullStartup() {
-    this.#currentStage = StartupStage.InitialAnnounce;
-    this.#stageCounter = 0;
+  #armConflictListener() {
+    if (this.#conflictListener) {
+      return;
+    }
 
-    // Set up conflict detection listener
     this.#conflictListener = (msg: Buffer) => {
       const conflictDeviceId = parseConflictPacket(msg);
       if (conflictDeviceId === this.#vcdj.id) {
@@ -400,6 +408,14 @@ export class Announcer {
       }
     };
     this.#announceSocket.on('message', this.#conflictListener);
+  }
+
+  /**
+   * Start the full startup protocol with stage progression.
+   */
+  #startFullStartup() {
+    this.#currentStage = StartupStage.InitialAnnounce;
+    this.#stageCounter = 0;
 
     this.#sendStagePackets();
   }
@@ -408,31 +424,16 @@ export class Announcer {
    * Handle a device ID conflict by finding an available ID and restarting.
    */
   #handleConflict() {
-    // Stop current startup
-    if (this.#intervalHandle) {
-      clearTimeout(this.#intervalHandle);
-      this.#intervalHandle = undefined;
-    }
+    // Stop announcing under the contested ID
+    this.#clearTimer();
 
-    // Find an available device ID
-    const usedIds = new Set([...this.#deviceManager.devices.values()].map(d => d.id));
-    let newId: number | null = null;
-
-    // Try IDs from 7-32 first (recommended range), then 1-6 if needed
-    for (let id = 7; id <= 32; id++) {
-      if (!usedIds.has(id)) {
-        newId = id;
-        break;
-      }
-    }
-    if (newId === null) {
-      for (let id = 1; id <= 6; id++) {
-        if (!usedIds.has(id)) {
-          newId = id;
-          break;
-        }
-      }
-    }
+    // Stay in whichever range we were already in. Dropping out of 1-6 would
+    // silently lose remotedb metadata for unanalyzed and streaming tracks, so
+    // a conflict on player 5 looks for another free player number first.
+    const usedIds = [...this.#deviceManager.devices.values()].map(d => d.id);
+    const newId = pickAvailableDeviceId(usedIds, {
+      preferRemoteDb: this.#vcdj.id <= REMOTEDB_MAX_DEVICE_ID,
+    });
 
     if (newId === null) {
       this.#logger.error('No available device IDs. All 32 slots are occupied.');
@@ -442,13 +443,33 @@ export class Announcer {
 
     this.#logger.info(`Switching to device ID ${newId}`);
 
-    // Update virtual CDJ with new ID
-    this.#vcdj = getVirtualCDJ(this.#iface, newId as DeviceID);
+    // Mutate in place rather than building a replacement device. The remotedb,
+    // localdb and control services were all handed this same object when the
+    // network connected and read `.id` when they build packets, so swapping
+    // the reference here would leave us announcing as one ID and querying as
+    // another.
+    this.#vcdj.id = newId;
 
-    // Restart startup sequence
-    this.#currentStage = StartupStage.InitialAnnounce;
-    this.#stageCounter = 0;
-    this.#sendStagePackets();
+    // Re-announce under the new ID
+    if (this.#fullStartup) {
+      this.#currentStage = StartupStage.InitialAnnounce;
+      this.#stageCounter = 0;
+      this.#sendStagePackets();
+    } else {
+      this.#startKeepAlive();
+    }
+  }
+
+  /**
+   * Clear whichever timer is currently driving announcements. Startup stages
+   * use a timeout, keep-alive uses an interval.
+   */
+  #clearTimer() {
+    if (this.#intervalHandle !== undefined) {
+      clearTimeout(this.#intervalHandle);
+      clearInterval(this.#intervalHandle);
+      this.#intervalHandle = undefined;
+    }
   }
 
   /**
@@ -548,16 +569,7 @@ export class Announcer {
    * Start sending keep-alive packets (final stage or when fullStartup is disabled).
    */
   #startKeepAlive() {
-    if (this.#intervalHandle) {
-      clearTimeout(this.#intervalHandle);
-      this.#intervalHandle = undefined;
-    }
-
-    // Remove conflict listener once we're in keep-alive mode
-    if (this.#conflictListener) {
-      this.#announceSocket.off('message', this.#conflictListener);
-      this.#conflictListener = undefined;
-    }
+    this.#clearTimer();
 
     const sendKeepAlive = () => {
       const peerCount = this.#deviceManager.devices.size + 1; // +1 for ourselves
@@ -576,11 +588,7 @@ export class Announcer {
   }
 
   stop() {
-    if (this.#intervalHandle !== undefined) {
-      clearInterval(this.#intervalHandle);
-      clearTimeout(this.#intervalHandle);
-      this.#intervalHandle = undefined;
-    }
+    this.#clearTimer();
 
     // Remove conflict listener if active
     if (this.#conflictListener) {
@@ -590,4 +598,5 @@ export class Announcer {
   }
 }
 
+export * from './device-id';
 export * from './stagehand';
