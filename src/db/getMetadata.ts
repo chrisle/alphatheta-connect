@@ -30,6 +30,24 @@ export interface Options {
   span?: Span;
 }
 
+/**
+ * Why a local database lookup produced no track.
+ *
+ * `viaLocal` used to answer both cases with a bare `null`, so a metadata
+ * failure in the field was indistinguishable from a slot that never hydrated
+ * — the reason NP3-361 could not be diagnosed from the logs a user sent in.
+ */
+export type LocalMiss =
+  /** No rekordbox database is loaded for that device slot */
+  | 'no-database'
+  /** The database is loaded, but holds no track with that id */
+  | 'track-absent';
+
+/**
+ * The outcome of a local database metadata lookup.
+ */
+export type LocalResult = {track: Track; miss: null} | {track: null; miss: LocalMiss};
+
 export async function viaRemote(remote: RemoteDatabase, opts: Required<Options>) {
   const {deviceId, trackSlot, trackType, trackId, span} = opts;
 
@@ -90,7 +108,7 @@ export async function viaLocal(
   local: LocalDatabase,
   device: Device,
   opts: Required<Options>
-) {
+): Promise<LocalResult> {
   const {deviceId, trackSlot, trackId} = opts;
 
   if (trackSlot !== MediaSlot.USB && trackSlot !== MediaSlot.SD) {
@@ -99,13 +117,13 @@ export async function viaLocal(
 
   const adapter = await local.get(deviceId, trackSlot);
   if (adapter === null) {
-    return null;
+    return {track: null, miss: 'no-database'};
   }
 
   const dbTrack = adapter.findTrack(trackId);
 
   if (dbTrack === null) {
-    return null;
+    return {track: null, miss: 'track-absent'};
   }
 
   const anlz = await loadAnlz(dbTrack, 'DAT', anlzLoader({device, slot: trackSlot}));
@@ -116,5 +134,5 @@ export async function viaLocal(
     waveformHd: null,
   };
 
-  return track;
+  return {track, miss: null};
 }
