@@ -54,6 +54,14 @@ export type {
   SortOption,
 } from 'onelibrary-connect';
 
+// Virtual CDJ device-ID selection, for consumers that choose their own ID
+export type {PickDeviceIdOptions} from './virtualcdj/device-id';
+export {
+  MAX_DEVICE_ID,
+  pickAvailableDeviceId,
+  REMOTEDB_MAX_DEVICE_ID,
+} from './virtualcdj/device-id';
+
 // Logger interface for pluggable logging
 export type {Logger} from './logger';
 export {noopLogger} from './logger';
