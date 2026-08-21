@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.22.0
+
+- fix: a player number conflict is now answered whenever it happens
+- feat: choosing a virtual CDJ player number no longer risks evicting a live deck
+
+
 ## v0.21.10
 
 - docs: an example turns rekordbox waveform bytes into a picture you can look at
