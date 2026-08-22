@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.23.2
+
+- fix: a track the CDJ's loaded library can't answer for still reaches your overlay
+
+
 ## v0.23.1
 
 - test: player number selection is checked against real announce packets
