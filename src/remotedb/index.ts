@@ -210,6 +210,16 @@ export default class RemoteDatabase {
   }
 
   /**
+   * The device we introduce ourselves as when opening a remote database
+   * connection. CDJs only answer queries from a host announcing an ID in the
+   * 1-6 range, so callers need to read this before deciding a remote lookup is
+   * even possible.
+   */
+  get hostDevice(): Device {
+    return this.#hostDevice;
+  }
+
+  /**
    * Open a connection to the specified device for querying
    */
   connectToDevice = async (device: Device) => {

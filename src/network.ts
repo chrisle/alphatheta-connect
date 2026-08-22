@@ -377,7 +377,7 @@ export class ProlinkNetwork {
     );
 
     // Create unified database
-    const database = new Database(localdb, remotedb, this.#deviceManager);
+    const database = new Database(localdb, remotedb, this.#deviceManager, this.#logger);
 
     // Create controller service
     const control = new Control(this.#beatSocket, vcdj);
