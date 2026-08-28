@@ -611,4 +611,5 @@ export class Announcer {
 }
 
 export * from './device-id';
+export * from './heartbeat';
 export * from './stagehand';

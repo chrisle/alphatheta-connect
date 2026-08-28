@@ -24,6 +24,7 @@ import {
   getVirtualCDJ,
   getVirtualStagehand,
   StagehandAnnouncer,
+  StagehandHeartbeat,
 } from 'src/virtualcdj';
 
 const connectErrorHelp =
@@ -112,6 +113,7 @@ export interface NetworkConfig {
 
 interface ConnectionService {
   announcer: Announcer | StagehandAnnouncer;
+  heartbeat: StagehandHeartbeat | null;
   control: Control;
   remotedb: RemoteDatabase;
   localdb: LocalDatabase;
@@ -367,6 +369,20 @@ export class ProlinkNetwork {
     }
     announcer.start();
 
+    // In Stagehand mode, unicast keep-alives to discovered players and the
+    // mixer so they push live state to us (mixer 0x39/0x58, CDJ 0x69/waveforms).
+    // Broadcast presence alone does not bootstrap that stream.
+    let heartbeat: StagehandHeartbeat | null = null;
+    if (connectMethod === 'stagehand') {
+      heartbeat = new StagehandHeartbeat(
+        vcdj,
+        this.#statusSocket,
+        this.#deviceManager,
+        this.#logger
+      );
+      heartbeat.start();
+    }
+
     // Create remote and local databases
     const remotedb = new RemoteDatabase(this.#deviceManager, vcdj);
     const localdb = new LocalDatabase(
@@ -383,7 +399,7 @@ export class ProlinkNetwork {
     const control = new Control(this.#beatSocket, vcdj);
 
     this.#state = NetworkState.Connected;
-    this.#connection = {announcer, control, remotedb, localdb, database};
+    this.#connection = {announcer, heartbeat, control, remotedb, localdb, database};
 
     tx.finish();
   }
@@ -398,6 +414,7 @@ export class ProlinkNetwork {
 
     // Stop announcing ourself
     this.#connection?.announcer.stop();
+    this.#connection?.heartbeat?.stop();
 
     // Disconnect devices from the remote and local databases
     for (const device of this.deviceManager.devices.values()) {
