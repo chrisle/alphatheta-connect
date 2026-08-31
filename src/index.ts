@@ -55,12 +55,17 @@ export type {
 } from 'onelibrary-connect';
 
 // Virtual CDJ device-ID selection, for consumers that choose their own ID
-export type {DeviceLike, PickDeviceIdOptions} from './virtualcdj/device-id';
+export type {
+  DeviceLike,
+  PickDeviceIdOptions,
+  QueryIdDeviceLike,
+} from './virtualcdj/device-id';
 export {
   DEFAULT_MIXER_PLAYER_CEILING,
   MAX_DEVICE_ID,
   MIXER_PLAYER_CEILING,
   pickAvailableDeviceId,
+  pickRemoteDbQueryId,
   playerNumberCeiling,
   REMOTEDB_MAX_DEVICE_ID,
 } from './virtualcdj/device-id';

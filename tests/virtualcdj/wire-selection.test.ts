@@ -66,7 +66,7 @@ describe('player number selection from announce packets', () => {
     const devices = [...deviceManager.devices.values()];
     return pickAvailableDeviceId(
       devices.map(d => d.id),
-      {preferRemoteDb: true, playerCeiling: playerNumberCeiling(devices)}
+      {preferPlayerRange: true, playerCeiling: playerNumberCeiling(devices)}
     );
   };
 

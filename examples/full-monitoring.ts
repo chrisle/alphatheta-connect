@@ -154,7 +154,7 @@ async function fullMonitoring() {
     player.bpm = state.trackBPM;
     player.isPlaying = state.playState === CDJStatus.PlayState.Playing;
     player.isOnAir = state.isOnAir;
-    player.pitch = state.sliderPitch;
+    player.pitch = state.effectivePitch;
     player.beat = state.beat;
   });
 

@@ -13,6 +13,7 @@ const makeState = (state?: Partial<CDJStatus.State>): CDJStatus.State => ({
   playState: CDJStatus.PlayState.Empty,
   isOnAir: false,
   isSync: false,
+  isBpmSync: false,
   isEmergencyMode: false,
   isMaster: false,
   trackBPM: MOCK_BPM,
@@ -21,6 +22,7 @@ const makeState = (state?: Partial<CDJStatus.State>): CDJStatus.State => ({
   beatInMeasure: 0,
   beatsUntilCue: 0,
   beat: 0,
+  deviceType: 0,
   packetNum: 0,
   ...state,
 });

@@ -170,31 +170,19 @@ describe('Database.getMetadata local-miss fallback', () => {
     );
   });
 
-  describe('when the virtual CDJ is outside the 1-6 range', () => {
-    it('skips the fallback instead of issuing a query CDJs will ignore', async () => {
+  describe('when the virtual CDJ is announced outside the 1-6 range', () => {
+    // The announced ID never constrains remotedb metadata: the 1-6 limit
+    // applies to the device-ID byte inside the remotedb messages, which
+    // RemoteDatabase picks per-connection. Hardware-verified on a CDJ-3000
+    // (2026-08-30, announced as VCDJ 7 throughout).
+    it('still attempts the remote fallback', async () => {
       const remote = makeRemote(7, remoteTrack);
       const db = new Database(makeLocal(null), remote, makeDeviceManager(), makeLogger());
 
       const track = await db.getMetadata(makeOpts());
 
-      expect(track).toBeNull();
-      expect(remote.get).not.toHaveBeenCalled();
-    });
-
-    it('says the player number is why no fallback was available', async () => {
-      const logger = makeLogger();
-      const db = new Database(
-        makeLocal(null),
-        makeRemote(7, remoteTrack),
-        makeDeviceManager(),
-        logger
-      );
-
-      await db.getMetadata(makeOpts());
-
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('this player is device 7')
-      );
+      expect(remote.get).toHaveBeenCalled();
+      expect(track).toEqual(expect.objectContaining({title: 'From RemoteDB'}));
     });
   });
 

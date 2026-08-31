@@ -24,6 +24,7 @@ import {
   getVirtualCDJ,
   getVirtualStagehand,
   StagehandAnnouncer,
+  StagehandHeartbeat,
 } from 'src/virtualcdj';
 
 const connectErrorHelp =
@@ -39,18 +40,19 @@ export interface NetworkConfig {
    *
    * IMPORTANT:
    *
-   * You will likely want to configure this to be > 6, however it is important to
-   * note, if you choose an ID within the 1-6 range, no other CDJ may exist on the
-   * network using that ID. you CAN NOT have 6 CDJs if you're using one of their slots.
+   * You will likely want to configure this to be > 6: if you choose an ID
+   * within the 1-6 range, no other CDJ may exist on the network using that ID
+   * — you CAN NOT have 6 CDJs if you're using one of their slots.
    *
-   * However, should you want to make metadata queries to a unanalized media
-   * device connected to the CDJ, or metadata queries for CD disc data, you MUST
-   * use a ID within the 1-6 range, as the CDJs will not respond to metadata
-   * requests outside of the range of 1-6
+   * This choice does NOT affect remotedb metadata (unanalyzed media, CD disc
+   * data, streaming tracks). CDJs restrict remotedb to a device-ID byte in
+   * the 1-6 range, but that byte lives inside the remotedb messages and is
+   * picked per-connection by RemoteDatabase, independent of the announced ID
+   * (hardware-verified on CDJ-3000, 2026-08-30).
    *
    * Note that rekordbox analyzed media connected to the CDJ is accessed out of
-   * band of the networks remote database protocol, and is not limited by this
-   * restriction.
+   * band of the networks remote database protocol, and was never limited by
+   * that restriction either.
    */
   vcdjId?: number;
   /**
@@ -112,6 +114,7 @@ export interface NetworkConfig {
 
 interface ConnectionService {
   announcer: Announcer | StagehandAnnouncer;
+  heartbeat: StagehandHeartbeat | null;
   control: Control;
   remotedb: RemoteDatabase;
   localdb: LocalDatabase;
@@ -367,6 +370,20 @@ export class ProlinkNetwork {
     }
     announcer.start();
 
+    // In Stagehand mode, unicast keep-alives to discovered players and the
+    // mixer so they push live state to us (mixer 0x39/0x58, CDJ 0x69/waveforms).
+    // Broadcast presence alone does not bootstrap that stream.
+    let heartbeat: StagehandHeartbeat | null = null;
+    if (connectMethod === 'stagehand') {
+      heartbeat = new StagehandHeartbeat(
+        vcdj,
+        this.#statusSocket,
+        this.#deviceManager,
+        this.#logger
+      );
+      heartbeat.start();
+    }
+
     // Create remote and local databases
     const remotedb = new RemoteDatabase(this.#deviceManager, vcdj);
     const localdb = new LocalDatabase(
@@ -383,7 +400,7 @@ export class ProlinkNetwork {
     const control = new Control(this.#beatSocket, vcdj);
 
     this.#state = NetworkState.Connected;
-    this.#connection = {announcer, control, remotedb, localdb, database};
+    this.#connection = {announcer, heartbeat, control, remotedb, localdb, database};
 
     tx.finish();
   }
@@ -398,6 +415,7 @@ export class ProlinkNetwork {
 
     // Stop announcing ourself
     this.#connection?.announcer.stop();
+    this.#connection?.heartbeat?.stop();
 
     // Disconnect devices from the remote and local databases
     for (const device of this.deviceManager.devices.values()) {

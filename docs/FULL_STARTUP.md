@@ -14,6 +14,7 @@ The full startup protocol is required when:
 4. **Dynamic Device Addition**: Scenarios where virtual CDJs are added/removed dynamically
 
 The simple keep-alive approach (default) works fine for:
+
 - Single virtual CDJ per network
 - Stable networks
 - Passive listening/monitoring (no active mixing control)
@@ -31,8 +32,8 @@ const network = await bringOnline();
 // Configure with full startup protocol enabled
 network.configure({
   iface: myNetworkInterface,
-  vcdjId: 5,  // Can be 1-6, with 5-6 being CDJ-3000 compatible
-  fullStartup: true,  // Enable full startup protocol
+  vcdjId: 5, // Can be 1-6, with 5-6 being CDJ-3000 compatible
+  fullStartup: true, // Enable full startup protocol
 });
 
 // Connect and begin announcing
@@ -59,7 +60,7 @@ const manager = new ProlinkConnectManager();
 
 manager.manuallyConfigureNetwork({
   iface: networkInterface,
-  vcdjId: 5,  // CDJ-3000 (players 5-6)
+  vcdjId: 5, // CDJ-3000 (players 5-6)
   fullStartup: true,
 });
 
@@ -71,25 +72,30 @@ manager.connect();
 When `fullStartup` is enabled, the Announcer service follows this 5-stage sequence:
 
 ### Stage 0: Initial Announcement (3 packets at ~300ms intervals)
+
 - Packet type: `0x0a`
 - Announces device presence to the network
 - CDJ-3000 compatible (for players 5-6)
 
 ### Stage 1: First-Stage Device Claims (3 packets at ~300ms intervals)
+
 - Packet type: `0x00`
 - Includes device ID and MAC address
 - Auto-assign flag for dynamic assignment
 
 ### Stage 2: Second-Stage Device Claims (3 packets at ~300ms intervals)
+
 - Packet type: `0x02`
 - Includes device ID, IP address, and MAC address
 - CDJ-3000 specific byte markers
 
 ### Stage 3: Final-Stage Device Claims (3 packets at ~300ms intervals)
+
 - Packet type: `0x04`
 - Device confirmation and final assignment
 
 ### Stage 4: Keep-Alive (every 1500ms)
+
 - Packet type: `0x06`
 - Continuous presence announcement
 - Transitions to keep-alive mode after stage 3
@@ -99,6 +105,7 @@ When `fullStartup` is enabled, the Announcer service follows this 5-stage sequen
 ## CDJ-3000 Compatibility
 
 Player IDs 5 and 6 are reserved for CDJ-3000 compatible devices and use special packet format:
+
 - Byte 0x21 = 0x03 (vs 0x02 for standard CDJs)
 - Additional CDJ-3000 specific markers in initial announcement
 - Fully compatible with Pioneer CDJ-3000 multitrack mixing
@@ -114,7 +121,7 @@ manager.manuallyConfigureNetwork({
 // CDJ-3000 (player 5-6)
 manager.manuallyConfigureNetwork({
   iface: eth0,
-  vcdjId: 5,  // CDJ-3000 compatible
+  vcdjId: 5, // CDJ-3000 compatible
   fullStartup: true,
 });
 ```
@@ -154,19 +161,19 @@ The following packet builder functions are exported for advanced use:
 
 ```typescript
 // Initial announcement (type 0x0a)
-export function makeInitialAnnouncementPacket(device: Device): Uint8Array
+export function makeInitialAnnouncementPacket(device: Device): Uint8Array;
 
 // First-stage claim (type 0x00)
-export function makeFirstStageClaimPacket(device: Device, counter: number): Uint8Array
+export function makeFirstStageClaimPacket(device: Device, counter: number): Uint8Array;
 
 // Second-stage claim (type 0x02)
-export function makeSecondStageClaimPacket(device: Device, counter: number): Uint8Array
+export function makeSecondStageClaimPacket(device: Device, counter: number): Uint8Array;
 
 // Final-stage claim (type 0x04)
-export function makeFinalStageClaimPacket(device: Device, counter: number): Uint8Array
+export function makeFinalStageClaimPacket(device: Device, counter: number): Uint8Array;
 
 // Keep-alive (type 0x06)
-export function makeAnnouncePacket(device: Device): Uint8Array
+export function makeAnnouncePacket(device: Device): Uint8Array;
 ```
 
 ## Testing
@@ -178,6 +185,7 @@ npm test -- tests/virtualcdj/startup.test.ts
 ```
 
 Tests cover:
+
 - Simple vs full startup mode configuration
 - Virtual CDJ device creation (standard and CDJ-3000)
 - Announcer lifecycle (start/stop)
@@ -208,20 +216,61 @@ All startup packets use the standard DJ Link network structure:
 ## Troubleshooting
 
 ### Devices not appearing after startup
+
 - Verify `fullStartup: true` is set in NetworkConfig
 - Check that device IDs (1-6) are unique on the network
 - Ensure network interface is correctly configured
 - Monitor network traffic to verify packets are being sent
 
 ### CDJ-3000 devices not recognized
+
 - Use player IDs 5-6 for CDJ-3000 compatibility
 - Verify other CDJ-3000 or real CDJ players are on network
 - Check that `fullStartup` is enabled
 
 ### Multiple virtual CDJs conflicting
+
 - Use unique device IDs (1-6) for each virtual CDJ
 - Enable `fullStartup: true` for proper device negotiation
 - Consider using separate network interfaces for each vCDJ
+
+## Reference: how real CDJ-3000 hardware claims a number
+
+The sequence above is the library's virtual-CDJ implementation. For context, this
+is how the ground-truth firmware does it, recovered from the CDJ-3000 DJ
+application (EP122, FW 3.20). Our announcer deliberately does **not** copy every
+detail — it announces above the player range to avoid evicting live decks — but
+the real algorithm is worth having on record.
+
+**State machine order.** The firmware's `network::SystemManager` runs its states
+in the order **Initialize → Discovery → SettingId → TimeServer → Connecting**
+(with LinkStop as teardown). Initialize emits the first announce packets;
+Discovery sends the pre-number identity probes; **SettingId** does the entire
+number claim / defend / assignment. (This corrects the commonly-cited
+"Discovery → Connecting → Initialize → SettingId" ordering.)
+
+**The number it proposes** comes from `sub_1020dd0`, which is a two-tier choice:
+
+1. If the front-panel **PLAYER No.** is set to a fixed value, that number is
+   _forced_. Menu value 1 = **Auto** (forces the internal "0 = assign me
+   anything"); values 2–7 force players **1–6**. (Settings key `"PlayerNo"`.)
+2. On **Auto**, it falls back to the persisted **`"LastPlayerNo"`** — the number
+   the deck used at its last power-on, stored on flash in
+   `/home/root/settings/CDJ3K_SETTINGS.DAT` and applied at boot. This is why a
+   deck "prefers the channel it used last time."
+
+**Claim / conflict resolution.** It broadcasts a wire-`0x02` claim carrying the
+proposed number (3× at ~300 ms). If a peer answers wire-`0x03` "that number is in
+use", a self-selected deck **increments 1 → 2 → … → 6 → 1**, retrying up to **6
+times** before giving up. A _forced_ number is never incremented away. The deck
+also **defends** its number: a peer claiming a number this deck holds gets a
+wire-`0x03` reply, and the deck refuses to yield when it already holds a number
+≤ 4 or its model string is `"CDJ-3000"`.
+
+**Mixer-assigned numbers.** When plugged into a channel-specific mixer port, the
+deck skips self-selection entirely and adopts the number handed to it verbatim in
+a wire-`0x03` / subtype-`0x01` grant. The mixer's port→number _policy_ lives in
+the mixer firmware, not the CDJ.
 
 ## See Also
 
