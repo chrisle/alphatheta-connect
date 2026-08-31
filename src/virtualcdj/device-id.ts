@@ -9,8 +9,13 @@ type DeviceID = number;
 /**
  * The highest device ID a CDJ will answer remotedb queries from.
  *
- * CDJs ignore metadata requests from devices numbered above this, which is why
- * the 1-6 range is worth preferring even though real players live there too.
+ * This limit applies to the device-ID byte inside the remotedb protocol (the
+ * Introduce message and every query header), NOT to the ID we announce on the
+ * network. Hardware-verified on a CDJ-3000 (2026-08-30, two players + DJM-V5,
+ * announced as VCDJ 7 throughout): queries carrying 1-6 are all answered —
+ * including IDs of absent players and the target's own ID — while 7 and above
+ * are silently ignored (the TCP connection and Introduce succeed, the query
+ * never gets a response). See {@link pickRemoteDbQueryId}.
  */
 export const REMOTEDB_MAX_DEVICE_ID = 6;
 
@@ -20,11 +25,13 @@ export const REMOTEDB_MAX_DEVICE_ID = 6;
 export const MAX_DEVICE_ID = 32;
 
 /**
- * `DeviceType.Mixer`, inlined so this module stays free of runtime imports —
- * it is re-exported into consumers' test environments, where pulling in the
- * whole type module (and its ip-address dependency) is dead weight.
+ * `DeviceType.Mixer` and `DeviceType.CDJ`, inlined so this module stays free
+ * of runtime imports — it is re-exported into consumers' test environments,
+ * where pulling in the whole type module (and its ip-address dependency) is
+ * dead weight.
  */
 const MIXER_DEVICE_TYPE = 0x03;
+const CDJ_DEVICE_TYPE = 0x01;
 
 /**
  * How many player numbers each mixer can hand out.
@@ -120,13 +127,15 @@ export function playerNumberCeiling(devices: Iterable<DeviceLike>): number | und
 
 export interface PickDeviceIdOptions {
   /**
-   * Prefer an ID in the 1-6 range, which is the only range CDJs answer
-   * remotedb metadata queries from (unanalyzed media, CD text, streaming
-   * tracks).
+   * Prefer an ID in the 1-6 range, the range real players number themselves
+   * in. Purely conventional: remotedb metadata no longer depends on our
+   * announced ID ({@link pickRemoteDbQueryId} chooses the in-protocol query
+   * ID independently), but sitting where gear expects players keeps us
+   * legible on link displays and avoids surprising other tooling.
    *
    * @default false
    */
-  preferRemoteDb?: boolean;
+  preferPlayerRange?: boolean;
   /**
    * The highest player number the rig can hand out, from
    * {@link playerNumberCeiling}. The search starts just above it, so the
@@ -167,7 +176,7 @@ const ascending = (from: number, to: number) => {
  */
 export function pickAvailableDeviceId(
   usedIds: Iterable<DeviceID>,
-  {preferRemoteDb = false, playerCeiling}: PickDeviceIdOptions = {}
+  {preferPlayerRange = false, playerCeiling}: PickDeviceIdOptions = {}
 ): DeviceID | null {
   const used = new Set(usedIds);
 
@@ -176,7 +185,7 @@ export function pickAvailableDeviceId(
       ? descending(REMOTEDB_MAX_DEVICE_ID, 1)
       : ascending(playerCeiling + 1, REMOTEDB_MAX_DEVICE_ID);
 
-  const outsideRemoteDb = ascending(REMOTEDB_MAX_DEVICE_ID + 1, MAX_DEVICE_ID);
+  const outsidePlayerRange = ascending(REMOTEDB_MAX_DEVICE_ID + 1, MAX_DEVICE_ID);
 
   // Numbers a player on this rig could be assigned. Last resort: better to
   // contend for a slot than not to join at all, and the announcer moves us if
@@ -186,9 +195,61 @@ export function pickAvailableDeviceId(
       ? []
       : descending(Math.min(playerCeiling, REMOTEDB_MAX_DEVICE_ID), 1);
 
-  const search = preferRemoteDb
-    ? [...aboveThePlayers, ...outsideRemoteDb, ...amongThePlayers]
-    : [...outsideRemoteDb, ...aboveThePlayers, ...amongThePlayers];
+  const search = preferPlayerRange
+    ? [...aboveThePlayers, ...outsidePlayerRange, ...amongThePlayers]
+    : [...outsidePlayerRange, ...aboveThePlayers, ...amongThePlayers];
 
   return search.find(id => !used.has(id)) ?? null;
+}
+
+/** The fields {@link pickRemoteDbQueryId} reads off a discovered device. */
+export interface QueryIdDeviceLike {
+  id: DeviceID;
+  type: number;
+}
+
+/**
+ * Choose the device ID to carry inside remotedb messages when querying a CDJ.
+ *
+ * CDJs only answer remotedb queries whose in-protocol device-ID byte is in
+ * 1-6, but that byte is independent of the ID we announce on the network — so
+ * a virtual CDJ announced safely above the player range (say 7 behind a
+ * DJM-V10) can still query metadata by carrying an in-range ID here. Verified
+ * on a CDJ-3000 (2026-08-30): absent IDs and even the target's own ID are
+ * answered; 7+ is silently dropped.
+ *
+ * Older players are documented (dysentery, nexus era) as stricter: the byte
+ * had to be 1-4, belong to a player actually on the network, and not be the
+ * player being queried. The preference order below satisfies those rules
+ * whenever the rig makes it possible, then falls back through choices newer
+ * players accept.
+ */
+export function pickRemoteDbQueryId(
+  targetId: DeviceID,
+  devices: Iterable<QueryIdDeviceLike>
+): DeviceID {
+  const playerIds = new Set<DeviceID>();
+  for (const device of devices) {
+    if (device.type === CDJ_DEVICE_TYPE && device.id <= REMOTEDB_MAX_DEVICE_ID) {
+      playerIds.add(device.id);
+    }
+  }
+
+  // A live player that isn't the target, lowest first — 1-4 satisfies every
+  // documented era of the restriction.
+  const otherPlayers = [...playerIds].filter(id => id !== targetId).sort((a, b) => a - b);
+  if (otherPlayers.length > 0) {
+    return otherPlayers[0];
+  }
+
+  // No other player on the rig: take the lowest 1-6 ID no player holds.
+  for (let id = 1; id <= REMOTEDB_MAX_DEVICE_ID; id++) {
+    if (id !== targetId && !playerIds.has(id)) {
+      return id;
+    }
+  }
+
+  // Six players and every one of them is the target? Impossible, but the
+  // target's own ID is answered too, so it is a safe closing fallback.
+  return targetId;
 }

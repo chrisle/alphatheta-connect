@@ -5,9 +5,10 @@ import PromiseSocket from 'promise-socket';
 import {Socket} from 'net';
 
 import DeviceManager from 'src/devices';
-import {Device, DeviceID, MediaSlot, TrackType} from 'src/types';
+import {Device, DeviceID, DeviceType, MediaSlot, TrackType} from 'src/types';
 import {TelemetrySpan as Span} from 'src/utils/telemetry';
 import * as Telemetry from 'src/utils/telemetry';
+import {pickRemoteDbQueryId, REMOTEDB_MAX_DEVICE_ID} from 'src/virtualcdj/device-id';
 
 import {getMessageName, MessageType, Request, Response} from './message/types';
 import {REMOTEDB_SERVER_QUERY_PORT} from './constants';
@@ -203,20 +204,59 @@ export default class RemoteDatabase {
    * Locks for each device when locating the connection
    */
   #deviceLocks = new Map<DeviceID, Mutex>();
+  /**
+   * The device ID each connection introduced itself with. Queries on that
+   * connection must carry the same ID.
+   */
+  #queryIds = new Map<DeviceID, DeviceID>();
+  /**
+   * Whether to substitute an in-range query ID when the host device sits
+   * outside 1-6. Disabled only by protocol probes that need to observe how a
+   * device treats the raw announced ID (see examples/remotedb-id-probe.ts).
+   */
+  #pickQueryId: boolean;
 
-  constructor(deviceManager: DeviceManager, hostDevice: Device) {
+  constructor(
+    deviceManager: DeviceManager,
+    hostDevice: Device,
+    {pickQueryId = true}: {pickQueryId?: boolean} = {}
+  ) {
     this.#deviceManager = deviceManager;
     this.#hostDevice = hostDevice;
+    this.#pickQueryId = pickQueryId;
   }
 
   /**
-   * The device we introduce ourselves as when opening a remote database
-   * connection. CDJs only answer queries from a host announcing an ID in the
-   * 1-6 range, so callers need to read this before deciding a remote lookup is
-   * even possible.
+   * The device this service belongs to — the virtual CDJ announced on the
+   * network. Note that this is NOT necessarily the ID carried inside remotedb
+   * messages: CDJs only answer queries whose in-protocol device-ID byte is
+   * 1-6, so when this device sits outside that range (announced above the
+   * player range to avoid collisions), each connection picks an in-range
+   * query ID via {@link pickRemoteDbQueryId} instead.
    */
   get hostDevice(): Device {
     return this.#hostDevice;
+  }
+
+  /**
+   * The device ID to introduce ourselves with, and to carry in every query,
+   * on a connection to the given device.
+   */
+  #queryIdFor(device: Device): DeviceID {
+    const hostId = this.#hostDevice.id;
+
+    // An announced ID already inside the answered range keeps working exactly
+    // as it always has. Rekordbox (which numbers itself far above 6) answers
+    // queries regardless, so only CDJ targets need an in-range stand-in.
+    if (
+      !this.#pickQueryId ||
+      hostId <= REMOTEDB_MAX_DEVICE_ID ||
+      device.type !== DeviceType.CDJ
+    ) {
+      return hostId;
+    }
+
+    return pickRemoteDbQueryId(device.id, this.#deviceManager.devices.values());
   }
 
   /**
@@ -254,10 +294,11 @@ export default class RemoteDatabase {
     }
 
     // Send introduction message to set context for querying
+    const queryId = this.#queryIdFor(device);
     const intro = new Message({
       transactionId: 0xfffffffe,
       type: MessageType.Introduce,
-      args: [new UInt32(this.#hostDevice.id)],
+      args: [new UInt32(queryId)],
     });
 
     await socket.write(intro.buffer);
@@ -272,6 +313,7 @@ export default class RemoteDatabase {
     (socket.stream as Socket).setTimeout(0);
 
     this.#connections.set(device.id, new Connection(device, socket));
+    this.#queryIds.set(device.id, queryId);
     tx.finish();
   };
 
@@ -297,6 +339,7 @@ export default class RemoteDatabase {
 
     conn.close();
     this.#connections.delete(device.id);
+    this.#queryIds.delete(device.id);
     tx.finish();
   };
 
@@ -331,7 +374,11 @@ export default class RemoteDatabase {
       // NOTE: We pass the same lock we use for this device to the query
       // interface to ensure all query interfaces use the same lock.
 
-      return new QueryInterface(conn, lock, this.#hostDevice);
+      // Queries must carry the same device ID the connection introduced
+      // itself with, which is not always the announced host ID.
+      const queryId = this.#queryIds.get(device.id) ?? this.#hostDevice.id;
+
+      return new QueryInterface(conn, lock, {...this.#hostDevice, id: queryId});
     } finally {
       releaseLock();
     }

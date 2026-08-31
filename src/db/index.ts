@@ -1,4 +1,3 @@
-import {MAX_CDJ_DEVICE_ID, MIN_CDJ_DEVICE_ID} from 'src/constants';
 import DeviceManager from 'src/devices';
 import {Track} from 'src/entities';
 import LocalDatabase from 'src/localdb';
@@ -155,24 +154,14 @@ class Database {
   /**
    * Second chance for a track the local database could not answer for.
    *
-   * CDJs only answer remote database queries from a host announcing a device
-   * ID in the 1-6 range, so this is unavailable whenever the virtual CDJ sits
-   * outside it (the package default is 7). That is a real configuration, not
-   * an error — log why the fallback was skipped rather than throwing, so the
-   * next report says which of the two happened.
+   * Available regardless of the virtual CDJ's announced ID: CDJs restrict
+   * remote database queries to a device-ID byte in the 1-6 range, but that
+   * byte lives inside the remotedb messages and RemoteDatabase picks an
+   * in-range one per connection — the announced ID never constrains this
+   * lookup. A failure here is logged rather than thrown, so a field report
+   * says what actually went wrong.
    */
   async #metadataViaRemoteFallback(opts: Required<GetMetadata.Options>) {
-    const hostId = this.#remoteDatabase.hostDevice.id;
-
-    if (hostId < MIN_CDJ_DEVICE_ID || hostId > MAX_CDJ_DEVICE_ID) {
-      this.#logger.warn(
-        `No remote fallback for track ${opts.trackId}: this player is device ` +
-          `${hostId}, and CDJs only answer remote database queries from ` +
-          `devices ${MIN_CDJ_DEVICE_ID}-${MAX_CDJ_DEVICE_ID}`
-      );
-      return null;
-    }
-
     try {
       const track = await GetMetadata.viaRemote(this.#remoteDatabase, opts);
       if (track === null) {

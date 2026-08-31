@@ -1,8 +1,10 @@
 /**
  * The default virtual CDJ ID to use.
  *
- * This particular ID is out of the 1-6 range, thus will not be able to request
- * metadata via the remotedb for CDJs.
+ * Out of the 1-6 player range, so it can never collide with a real CDJ.
+ * Remotedb metadata still works from here: the 1-6 restriction applies to the
+ * device-ID byte inside remotedb messages, which RemoteDatabase picks
+ * per-connection independently of the announced ID.
  */
 export const DEFAULT_VCDJ_ID = 0x07;
 

@@ -3,6 +3,7 @@ import {
   DEFAULT_MIXER_PLAYER_CEILING,
   MAX_DEVICE_ID,
   pickAvailableDeviceId,
+  pickRemoteDbQueryId,
   playerNumberCeiling,
   REMOTEDB_MAX_DEVICE_ID,
 } from 'src/virtualcdj/device-id';
@@ -50,7 +51,7 @@ describe('playerNumberCeiling', () => {
 describe('pickAvailableDeviceId', () => {
   describe('with a mixer to reason from', () => {
     const pick = (usedIds: number[], playerCeiling: number) =>
-      pickAvailableDeviceId(usedIds, {preferRemoteDb: true, playerCeiling});
+      pickAvailableDeviceId(usedIds, {preferPlayerRange: true, playerCeiling});
 
     it('sits just above the numbers the mixer can hand out', () => {
       expect(pick([1, 2, 3, 4, 33], 4)).toBe(5); // DJM-A9
@@ -93,7 +94,7 @@ describe('pickAvailableDeviceId', () => {
 
   describe('with no mixer on the network', () => {
     const pick = (usedIds: number[]) =>
-      pickAvailableDeviceId(usedIds, {preferRemoteDb: true});
+      pickAvailableDeviceId(usedIds, {preferPlayerRange: true});
 
     it('works down from the top of the range', () => {
       // Nothing says how high player numbers will go, and players number
@@ -129,5 +130,50 @@ describe('pickAvailableDeviceId', () => {
   it('accepts any iterable of used IDs', () => {
     expect(pickAvailableDeviceId(new Set([7, 8]))).toBe(9);
     expect(pickAvailableDeviceId(new Map([[7, 'a']]).keys())).toBe(8);
+  });
+});
+
+describe('pickRemoteDbQueryId', () => {
+  const cdj = (id: number) => ({id, type: DeviceType.CDJ});
+  const mixerAt = (id: number) => ({id, type: DeviceType.Mixer});
+  const rekordbox = (id: number) => ({id, type: DeviceType.Rekordbox});
+
+  it('poses as a live player that is not the target', () => {
+    // Satisfies the strictest documented (nexus-era) rules: 1-4, present on
+    // the network, not the player being queried.
+    expect(pickRemoteDbQueryId(2, [cdj(1), cdj(2)])).toBe(1);
+    expect(pickRemoteDbQueryId(1, [cdj(1), cdj(2)])).toBe(2);
+    expect(pickRemoteDbQueryId(5, [cdj(3), cdj(5)])).toBe(3);
+  });
+
+  it('takes the lowest free 1-6 ID when the target is the only player', () => {
+    // Verified on CDJ-3000: IDs of absent players are answered too.
+    expect(pickRemoteDbQueryId(2, [cdj(2)])).toBe(1);
+    expect(pickRemoteDbQueryId(1, [cdj(1)])).toBe(2);
+  });
+
+  it('ignores mixers and rekordbox when looking for players to pose as', () => {
+    expect(pickRemoteDbQueryId(2, [cdj(2), mixerAt(33), rekordbox(17)])).toBe(1);
+  });
+
+  it('never returns an ID above the remotedb range', () => {
+    const rigs: Array<Array<{id: number; type: number}>> = [
+      [cdj(1)],
+      [cdj(1), cdj(2), cdj(3), cdj(4), cdj(5), cdj(6), mixerAt(33)],
+      [mixerAt(33)],
+    ];
+    for (const rig of rigs) {
+      for (const target of [1, 2, 3, 4, 5, 6]) {
+        expect(pickRemoteDbQueryId(target, rig)).toBeLessThanOrEqual(
+          REMOTEDB_MAX_DEVICE_ID
+        );
+      }
+    }
+  });
+
+  it('answers the full-rig case with the lowest other player', () => {
+    const rig = [cdj(1), cdj(2), cdj(3), cdj(4), cdj(5), cdj(6)];
+    expect(pickRemoteDbQueryId(3, rig)).toBe(1);
+    expect(pickRemoteDbQueryId(1, rig)).toBe(2);
   });
 });

@@ -40,18 +40,19 @@ export interface NetworkConfig {
    *
    * IMPORTANT:
    *
-   * You will likely want to configure this to be > 6, however it is important to
-   * note, if you choose an ID within the 1-6 range, no other CDJ may exist on the
-   * network using that ID. you CAN NOT have 6 CDJs if you're using one of their slots.
+   * You will likely want to configure this to be > 6: if you choose an ID
+   * within the 1-6 range, no other CDJ may exist on the network using that ID
+   * — you CAN NOT have 6 CDJs if you're using one of their slots.
    *
-   * However, should you want to make metadata queries to a unanalized media
-   * device connected to the CDJ, or metadata queries for CD disc data, you MUST
-   * use a ID within the 1-6 range, as the CDJs will not respond to metadata
-   * requests outside of the range of 1-6
+   * This choice does NOT affect remotedb metadata (unanalyzed media, CD disc
+   * data, streaming tracks). CDJs restrict remotedb to a device-ID byte in
+   * the 1-6 range, but that byte lives inside the remotedb messages and is
+   * picked per-connection by RemoteDatabase, independent of the announced ID
+   * (hardware-verified on CDJ-3000, 2026-08-30).
    *
    * Note that rekordbox analyzed media connected to the CDJ is accessed out of
-   * band of the networks remote database protocol, and is not limited by this
-   * restriction.
+   * band of the networks remote database protocol, and was never limited by
+   * that restriction either.
    */
   vcdjId?: number;
   /**

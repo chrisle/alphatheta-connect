@@ -431,9 +431,9 @@ export class Announcer {
     // Stop announcing under the contested ID
     this.#clearTimer();
 
-    // Stay in whichever range we were already in. Dropping out of 1-6 would
-    // silently lose remotedb metadata for unanalyzed and streaming tracks, so
-    // a conflict on player 5 looks for another free player number first.
+    // Stay in whichever range we were already in, so a conflict on player 5
+    // looks for another free player number first rather than jumping the
+    // whole device out of the range the DJ configured it into.
     //
     // The mixer decides which of those numbers are actually safe: a player can
     // only be assigned a number its mixer has a channel for, so anything above
@@ -442,7 +442,7 @@ export class Announcer {
     const newId = pickAvailableDeviceId(
       devices.map(d => d.id),
       {
-        preferRemoteDb: this.#vcdj.id <= REMOTEDB_MAX_DEVICE_ID,
+        preferPlayerRange: this.#vcdj.id <= REMOTEDB_MAX_DEVICE_ID,
         playerCeiling: playerNumberCeiling(devices),
       }
     );
