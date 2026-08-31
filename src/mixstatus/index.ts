@@ -405,7 +405,7 @@ export class MixstatusProcessor {
     const startedAt = this.#lastStartTime.get(deviceId);
     const requiredPlayTime =
       this.#config.beatsUntilReported *
-      bpmToSeconds(state.trackBPM!, state.sliderPitch) *
+      bpmToSeconds(state.trackBPM!, state.effectivePitch) *
       1000;
 
     if (
@@ -421,7 +421,7 @@ export class MixstatusProcessor {
     const stoppedAt = this.#lastStoppedTimes.get(deviceId);
     const requiredStopTime =
       this.#config.allowedInterruptBeats *
-      bpmToSeconds(state.trackBPM!, state.sliderPitch) *
+      bpmToSeconds(state.trackBPM!, state.effectivePitch) *
       1000;
 
     if (stoppedAt !== undefined && requiredStopTime <= Date.now() - stoppedAt) {

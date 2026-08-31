@@ -1,31 +1,34 @@
 # Changelog
 
+## v0.24.0
+
+- fix: CDJ status `effectivePitch` and `sliderPitch` now hold the values their names describe — `effectivePitch` is the pitch in effect (BPM display) and `sliderPitch` is the local fader position (they were previously swapped)
+- feat: CDJ status now reports BPM Sync (a synced deck that has been pitch-bent) as `isBpmSync`
+- feat: CDJ status now exposes the player-type / capability byte as `deviceType` (`0x0f` nexus, `0x1f` CDJ-3000 / XDJ-XZ, `0x05` older)
+- docs: status flag bits, the four pitch fields, and the packet counter are documented from CDJ-3000 firmware, including that CDJ-3000 hardwires the legacy counter to 0
+- docs: FULL_STARTUP records how real CDJ-3000 hardware selects and defends its player number
+
 ## v0.23.0
 
 - feat: the player number auto-picks from the mixer's channel count
-
 
 ## v0.22.0
 
 - fix: a player number conflict is now answered whenever it happens
 - feat: choosing a virtual CDJ player number no longer risks evicting a live deck
 
-
 ## v0.21.10
 
 - docs: an example turns rekordbox waveform bytes into a picture you can look at
 - chore: .DS_Store no longer rides along in every checkout
 
-
 ## v0.21.9
 
 - chore: lockfiles pick up metadata-connect 1.1.11
 
-
 ## v0.21.8
 
 - test: local test runs stop failing when native sqlite is built for Electron
-
 
 ## v0.21.7
 
@@ -34,42 +37,34 @@
 - ci: npm publishes succeed again by running the release job on the latest Node 22
 - fix: only run experimental Stagehand packet parsing in stagehand mode
 
-
 ## v0.21.6
 
 - chore: sync lockfiles to onelibrary-connect 1.1.3
 
-
 ## v0.21.5
 
 - chore: pin onelibrary-connect's better-sqlite3-multiple-ciphers to ^12.9.0 in the lockfile
-
 
 ## v0.21.4
 
 - build: pin nan to 2.28.0 and bump sqlite to 12.11.1 for Electron 43
 - chore: require better-sqlite3-multiple-ciphers ^12.9.0 for Electron 43
 
-
 ## v0.21.3
 
 - chore: bump metadata-connect to 1.1.10 in lockfiles
-
 
 ## v0.21.2
 
 - chore: sync lockfiles to the onelibrary-connect v1.1.2 release
 
-
 ## v0.21.1
 
 - fix: keep StatusEmitter event typing strict for consumers
 
-
 ## v0.21.0
 
 - feat: add Pioneer Stagehand connection mode support and direct remote control capabilities (v0.20.0)
-
 
 ## v0.20.0
 
@@ -83,7 +78,6 @@
 ## v0.19.1
 
 - ci: upgrade npm before publishing so OIDC trusted publishing works
-
 
 ## v0.19.0
 
@@ -349,7 +343,6 @@
 - Allow analyzeDate and dateAdded to be null
 - Ensure basic id/name always has string for name
 - Fix trackTypeNames mapping
-
 
 All notable changes to alphatheta-connect (formerly prolink-connect) will be documented in this file.
 

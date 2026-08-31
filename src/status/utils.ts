@@ -36,14 +36,24 @@ export function statusFromPacket(packet: Buffer) {
     playState: packet[0x7b],
     isOnAir: (packet[0x89] & CDJStatus.StatusFlag.OnAir) !== 0,
     isSync: (packet[0x89] & CDJStatus.StatusFlag.Sync) !== 0,
+    isBpmSync: (packet[0x89] & CDJStatus.StatusFlag.BpmSync) !== 0,
     isMaster: (packet[0x89] & CDJStatus.StatusFlag.Master) !== 0,
     isEmergencyMode: !!packet[0xba],
     trackBPM,
-    sliderPitch: calcPitch(packet.slice(0x8d, 0x8d + 3)),
-    effectivePitch: calcPitch(packet.slice(0x99, 0x99 + 3)),
+    // The CDJ status packet carries four pitch values (firmware CDJ-3000 FW3.20,
+    // sub_d7d610): Pitch1@0x8c and Pitch3@0xc0 are the *effective* pitch (in
+    // effect / on the BPM display, from the fader or a synced master), while
+    // Pitch2@0x98 and Pitch4@0xc4 track the *local fader* position. We expose
+    // Pitch1 as `effectivePitch` and Pitch2 as `sliderPitch`.
+    effectivePitch: calcPitch(packet.slice(0x8d, 0x8d + 3)),
+    sliderPitch: calcPitch(packet.slice(0x99, 0x99 + 3)),
     beatInMeasure: packet[0xa6],
     beatsUntilCue,
     beat,
+    // Player-type / capability byte (dysentery's "nx"). Guarded because the
+    // length check above only guarantees 0xc8; older/short packets may not
+    // reach 0xcc, in which case the field reads as 0 (version-gated to 0 anyway).
+    deviceType: packet.length > 0xcc ? packet[0xcc] : 0,
     packetNum: packet.readUInt32BE(0xc8),
   };
 

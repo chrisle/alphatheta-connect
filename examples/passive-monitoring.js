@@ -335,9 +335,9 @@ async function main() {
     // Update player state
     player.bpm = status.trackBPM;
     player.effectiveBpm = status.trackBPM
-      ? status.trackBPM * (1 + status.sliderPitch / 100)
+      ? status.trackBPM * (1 + status.effectivePitch / 100)
       : null;
-    player.pitch = status.sliderPitch;
+    player.pitch = status.effectivePitch;
     player.isPlaying = status.playState === CDJStatus.PlayState.Playing;
     player.isOnAir = status.isOnAir;
     player.isMaster = status.isMaster;
