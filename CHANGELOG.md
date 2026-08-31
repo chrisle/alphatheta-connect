@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.25.0
+
+- docs: record how real CDJ-3000 hardware selects and defends its player number
+- feat: expose more CDJ status fields and correct the swapped pitch values
+- fix: streaming and unanalyzed tracks get metadata at any announced player number
+- feat: bridge mode now unicasts keep-alives so the mixer and players push live state back
+
+
 ## v0.24.0
 
 - fix: CDJ status `effectivePitch` and `sliderPitch` now hold the values their names describe — `effectivePitch` is the pitch in effect (BPM display) and `sliderPitch` is the local fader position (they were previously swapped)
