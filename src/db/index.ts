@@ -108,7 +108,7 @@ class Database {
     tx.setTag('trackType', getTrackTypeName(trackType));
     tx.setTag('trackSlot', getSlotName(trackSlot));
 
-    const callOpts = {...opts, span: tx};
+    const callOpts = {...opts, trackBPM: opts.trackBPM ?? null, span: tx};
 
     const device = await this.#deviceManager.getDeviceEnsured(deviceId);
     if (device === null) {
@@ -125,6 +125,15 @@ class Database {
     if (strategy === LookupStrategy.Local) {
       const local = await GetMetadata.viaLocal(this.#localDatabase, device, callOpts);
       track = local.track;
+
+      if (local.switchedTo !== null) {
+        this.#logger.info(
+          `Device ${deviceId} ${getSlotName(trackSlot)} is now read from the ` +
+            `${local.switchedTo === 'pdb' ? 'legacy PDB' : 'OneLibrary'} database: ` +
+            `it is the one that holds track ${opts.trackId} as the player reports it ` +
+            `(NP3-399)`
+        );
+      }
 
       // A local miss used to end the lookup, so the DJ's track silently never
       // reached the overlay for the rest of the set (NP3-361). Say what was

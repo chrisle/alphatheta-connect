@@ -4,6 +4,7 @@ import {
   type DatabasePreference,
   type DatabaseType,
   OneLibraryAdapter,
+  type Track,
 } from 'onelibrary-connect';
 import StrictEventEmitter from 'strict-event-emitter-types';
 
@@ -88,15 +89,10 @@ interface DatabaseEvents {
 
 type Emitter = StrictEventEmitter<EventEmitter, DatabaseEvents>;
 
-interface DatabaseItem {
-  /**
-   * The uniquity identifier of the database
-   */
-  id: string;
-  /**
-   * The media device plugged into the device
-   */
-  media: MediaSlotInfo;
+/**
+ * One loaded database file: the adapter plus the temp file backing it, if any.
+ */
+interface LoadedAdapter {
   /**
    * The database adapter instance (MetadataORM or OneLibraryAdapter)
    */
@@ -106,6 +102,85 @@ interface DatabaseItem {
    */
   tempFile?: string;
 }
+
+interface DatabaseItem extends LoadedAdapter {
+  /**
+   * The uniquity identifier of the database
+   */
+  id: string;
+  /**
+   * The media device plugged into the device
+   */
+  media: MediaSlotInfo;
+  /**
+   * The CDJ the media is plugged into
+   */
+  device: Device;
+  /**
+   * The slot the media is plugged into
+   */
+  slot: DatabaseSlot;
+  /**
+   * The other database format on the same media, loaded on demand when the
+   * active database disagrees with what the player reports (see
+   * {@link LocalDatabase.findTrack}).
+   *
+   * `undefined` means it has not been tried yet; `null` means the media has no
+   * such file (or it failed to load) and it will not be tried again.
+   */
+  alternate?: LoadedAdapter | null;
+  /**
+   * Serialises loading of the alternate database for this media.
+   */
+  alternateLock: Mutex;
+}
+
+/**
+ * What the player knows about the track it is asking us to look up, used to
+ * check that the row a database hands back is really that track.
+ */
+export interface TrackLookupHint {
+  /**
+   * The track's BPM as reported in the player's status packet (unpitched,
+   * two decimals). `null` when the player did not report one.
+   */
+  trackBPM?: number | null;
+}
+
+/**
+ * The outcome of {@link LocalDatabase.findTrack}.
+ */
+export type TrackLookup =
+  | {
+      /** The database that answered */
+      adapter: DatabaseAdapter;
+      track: Track;
+      /**
+       * Set when answering meant switching the slot to its other database
+       * format: the type the slot is now served from.
+       */
+      switchedTo: DatabaseType | null;
+    }
+  | {
+      /** The slot's database, or null when the slot has none loaded */
+      adapter: DatabaseAdapter | null;
+      track: null;
+      switchedTo: null;
+    };
+
+/**
+ * A row is only trusted when the player's reported BPM agrees with it. Either
+ * side missing (unanalysed track, or a player that reports no BPM) is
+ * inconclusive and counts as agreement.
+ */
+const trackAgreesWithPlayer = (track: Track, hint: TrackLookupHint) => {
+  const reported = hint.trackBPM;
+  if (reported === null || reported === undefined || !track.tempo) {
+    return true;
+  }
+
+  return Math.abs(track.tempo - reported) < 0.05;
+};
 
 /**
  * Compute the identifier for media device in a CDJ. This is used to determine
@@ -202,17 +277,24 @@ class LocalDatabase {
   #handleDeviceRemoved = (device: Device) => {
     const db = this.#dbs.find(db => db.media.deviceId === device.id);
     if (db) {
-      db.adapter.close();
-      // Clean up temp file if it exists (OneLibrary databases)
-      if (db.tempFile) {
-        try {
-          fs.unlinkSync(db.tempFile);
-        } catch {
-          // Ignore cleanup errors
-        }
+      this.#closeLoaded(db);
+      if (db.alternate) {
+        this.#closeLoaded(db.alternate);
       }
     }
     this.#dbs = this.#dbs.filter(db => db.media.deviceId !== device.id);
+  };
+
+  #closeLoaded = (loaded: LoadedAdapter) => {
+    loaded.adapter.close();
+    // Clean up temp file if it exists (OneLibrary databases)
+    if (loaded.tempFile) {
+      try {
+        fs.unlinkSync(loaded.tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   };
 
   /**
@@ -354,13 +436,108 @@ class LocalDatabase {
 
     this.#emitter.emit('hydrationDone', {device, slot});
 
-    const db: DatabaseItem = {adapter, media, id: getMediaId(media), tempFile};
+    const db: DatabaseItem = {
+      adapter,
+      media,
+      device,
+      slot,
+      id: getMediaId(media),
+      tempFile,
+      alternateLock: new Mutex(),
+    };
     this.#dbs.push(db);
 
     tx.finish();
 
     return db;
   };
+
+  /**
+   * Loads the database format the slot is *not* currently served from, so a
+   * lookup can be checked against it. Only meaningful under the 'auto'
+   * preference: a forced format has no alternate. The result (or its absence)
+   * is remembered so the media is never downloaded twice.
+   */
+  #loadAlternate = (db: DatabaseItem): Promise<LoadedAdapter | null> =>
+    db.alternateLock.runExclusive(async () => {
+      if (db.alternate !== undefined) {
+        return db.alternate;
+      }
+
+      if (this.#preference !== 'auto') {
+        db.alternate = null;
+        return null;
+      }
+
+      const tx = Telemetry.startTransaction({name: 'hydrateAlternateDatabase'});
+      tx.setTag('slot', getSlotName(db.media.slot));
+      tx.setTag('activeDbType', db.adapter.type);
+
+      try {
+        if (db.adapter.type === 'oneLibrary') {
+          const adapter = await this.#loadPdbDatabase(db.device, db.slot, tx);
+          db.alternate = {adapter};
+          tx.setTag('dbType', 'pdb');
+        } else {
+          db.alternate = await this.#tryLoadOneLibrary(db.device, db.slot, tx);
+          tx.setTag('dbType', db.alternate ? 'oneLibrary' : 'none');
+        }
+      } catch {
+        // The media simply has no such file (or it could not be read).
+        db.alternate = null;
+      }
+
+      tx.finish();
+      return db.alternate;
+    });
+
+  /**
+   * Looks a track up in the databases of a device slot, checking the answer
+   * against what the player reports.
+   *
+   * A Device Library Plus export carries both `exportLibrary.db` and the
+   * legacy `export.pdb`, and their track IDs are different number spaces. A
+   * player that reads one while we loaded the other resolves most IDs to a
+   * different track and some to nothing at all (NP3-399). So when the active
+   * database has no such row, or its row's BPM is not the BPM the player is
+   * showing, the other format is loaded and asked. If it agrees with the
+   * player, the slot switches to it for every later lookup — artwork,
+   * analysis and the next track all follow the database the player is using.
+   *
+   * When neither database can be confirmed, the active database's row (if any)
+   * is returned as before.
+   */
+  async findTrack(
+    deviceId: DeviceID,
+    slot: DatabaseSlot,
+    trackId: number,
+    hint: TrackLookupHint = {}
+  ): Promise<TrackLookup> {
+    const db = await this.#getItem(deviceId, slot);
+    if (db === null) {
+      return {adapter: null, track: null, switchedTo: null};
+    }
+
+    const active = db.adapter.findTrack(trackId);
+    if (active !== null && trackAgreesWithPlayer(active, hint)) {
+      return {adapter: db.adapter, track: active, switchedTo: null};
+    }
+
+    const alternate = await this.#loadAlternate(db);
+    if (alternate !== null) {
+      const other = alternate.adapter.findTrack(trackId);
+      if (other !== null && trackAgreesWithPlayer(other, hint)) {
+        db.alternate = {adapter: db.adapter, tempFile: db.tempFile};
+        db.adapter = alternate.adapter;
+        db.tempFile = alternate.tempFile;
+        return {adapter: db.adapter, track: other, switchedTo: db.adapter.type};
+      }
+    }
+
+    return active === null
+      ? {adapter: db.adapter, track: null, switchedTo: null}
+      : {adapter: db.adapter, track: active, switchedTo: null};
+  }
 
   /**
    * Gets the database adapter for the media metadata in the provided device slot.
@@ -371,6 +548,14 @@ class LocalDatabase {
    * @returns null if no rekordbox media present
    */
   async get(deviceId: DeviceID, slot: DatabaseSlot): Promise<DatabaseAdapter | null> {
+    const db = await this.#getItem(deviceId, slot);
+    return db?.adapter ?? null;
+  }
+
+  /**
+   * The loaded database entry for a device slot, hydrating it first if needed.
+   */
+  async #getItem(deviceId: DeviceID, slot: DatabaseSlot): Promise<DatabaseItem | null> {
     const lockKey = `${deviceId}-${slot}`;
     const lock =
       this.#slotLocks.get(lockKey) ??
@@ -417,7 +602,7 @@ class LocalDatabase {
       return this.#hydrateDatabase(device, slot, media);
     });
 
-    return db.adapter;
+    return db;
   }
 
   /**

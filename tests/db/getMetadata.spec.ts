@@ -32,9 +32,23 @@ function makeLogger() {
   } satisfies Logger;
 }
 
-/** A LocalDatabase that never answers for the requested track. */
-function makeLocal(adapter: unknown) {
-  return {get: jest.fn().mockResolvedValue(adapter)} as any;
+/**
+ * A LocalDatabase serving one slot from `adapter` (null = no database loaded),
+ * answering lookups straight from it with no format switch.
+ */
+function makeLocal(adapter: any, switchedTo: string | null = null) {
+  return {
+    get: jest.fn().mockResolvedValue(adapter),
+    findTrack: jest.fn(async (_deviceId: number, _slot: number, trackId: number) => {
+      if (adapter === null) {
+        return {adapter: null, track: null, switchedTo: null};
+      }
+      const track = adapter.findTrack(trackId);
+      return track === null
+        ? {adapter, track: null, switchedTo: null}
+        : {adapter, track, switchedTo};
+    }),
+  } as any;
 }
 
 /** A RemoteDatabase announcing as `hostId`, answering with `track`. */
@@ -74,7 +88,7 @@ describe('getMetadata.viaLocal outcome', () => {
   it('reports no-database when the slot has no rekordbox database loaded', async () => {
     const result = await viaLocal(makeLocal(null), cdj, makeOpts());
 
-    expect(result).toEqual({track: null, miss: 'no-database'});
+    expect(result).toEqual({track: null, miss: 'no-database', switchedTo: null});
   });
 
   it('reports track-absent when the database is loaded but lacks the track', async () => {
@@ -82,7 +96,7 @@ describe('getMetadata.viaLocal outcome', () => {
 
     const result = await viaLocal(makeLocal(adapter), cdj, makeOpts());
 
-    expect(result).toEqual({track: null, miss: 'track-absent'});
+    expect(result).toEqual({track: null, miss: 'track-absent', switchedTo: null});
     expect(adapter.findTrack).toHaveBeenCalledWith(40492);
   });
 
@@ -209,5 +223,60 @@ describe('Database.getMetadata local-miss fallback', () => {
     );
 
     await expect(db.getMetadata(makeOpts())).resolves.toBeNull();
+  });
+});
+
+/**
+ * NP3-399 — the player's reported BPM travels with the lookup, and a database
+ * switch made to answer it is logged so a field report says which file the
+ * slot is being read from.
+ */
+describe('getMetadata database-format check (NP3-399)', () => {
+  it('hands the player-reported BPM to the local lookup', async () => {
+    const adapter = {
+      findTrack: jest.fn().mockReturnValue({id: 32657, title: 'Focused', tempo: 126}),
+    };
+    const local = makeLocal(adapter);
+
+    await viaLocal(local, cdj, makeOpts({trackId: 32657, trackBPM: 126}));
+
+    expect(local.findTrack).toHaveBeenCalledWith(3, MediaSlot.USB, 32657, {
+      trackBPM: 126,
+    });
+  });
+
+  it('logs when the slot switched database format to answer', async () => {
+    const logger = makeLogger();
+    const adapter = {
+      findTrack: jest.fn().mockReturnValue({id: 32657, title: 'Focused', tempo: 126}),
+    };
+    const db = new Database(
+      makeLocal(adapter, 'pdb'),
+      makeRemote(7, null),
+      makeDeviceManager(),
+      logger
+    );
+
+    const track = await db.getMetadata(makeOpts({trackId: 32657, trackBPM: 126}));
+
+    expect(track).toEqual(expect.objectContaining({title: 'Focused'}));
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('now read from the legacy PDB database')
+    );
+  });
+
+  it('passes a null BPM when the caller has none', async () => {
+    const adapter = {findTrack: jest.fn().mockReturnValue({id: 1, title: 'x', tempo: 0})};
+    const local = makeLocal(adapter);
+    const db = new Database(
+      local,
+      makeRemote(7, null),
+      makeDeviceManager(),
+      makeLogger()
+    );
+
+    await db.getMetadata(makeOpts({trackId: 1}));
+
+    expect(local.findTrack).toHaveBeenCalledWith(3, MediaSlot.USB, 1, {trackBPM: null});
   });
 });

@@ -1,5 +1,6 @@
 import {Track} from 'src/entities';
 import LocalDatabase from 'src/localdb';
+import {DatabaseType} from 'src/localdb/database-adapter';
 import {loadAnlz} from 'src/localdb/rekordbox';
 import RemoteDatabase, {MenuTarget, Query} from 'src/remotedb';
 import {Device, DeviceID, MediaSlot, TrackType} from 'src/types';
@@ -25,6 +26,12 @@ export interface Options {
    */
   trackId: number;
   /**
+   * The track's BPM as the player reports it in its status packet, when known.
+   * Used to check that the local database row for `trackId` is really the
+   * track the player is showing (see {@link LocalDatabase.findTrack}).
+   */
+  trackBPM?: number | null;
+  /**
    * The Sentry transaction span
    */
   span?: Span;
@@ -46,7 +53,17 @@ export type LocalMiss =
 /**
  * The outcome of a local database metadata lookup.
  */
-export type LocalResult = {track: Track; miss: null} | {track: null; miss: LocalMiss};
+export type LocalResult =
+  | {
+      track: Track;
+      miss: null;
+      /**
+       * Set when the slot had to switch to its other database format to
+       * answer: the format it is now served from.
+       */
+      switchedTo: DatabaseType | null;
+    }
+  | {track: null; miss: LocalMiss; switchedTo: null};
 
 export async function viaRemote(remote: RemoteDatabase, opts: Required<Options>) {
   const {deviceId, trackSlot, trackType, trackId, span} = opts;
@@ -109,30 +126,28 @@ export async function viaLocal(
   device: Device,
   opts: Required<Options>
 ): Promise<LocalResult> {
-  const {deviceId, trackSlot, trackId} = opts;
+  const {deviceId, trackSlot, trackId, trackBPM} = opts;
 
   if (trackSlot !== MediaSlot.USB && trackSlot !== MediaSlot.SD) {
     throw new Error('Expected USB or SD slot for local database query');
   }
 
-  const adapter = await local.get(deviceId, trackSlot);
-  if (adapter === null) {
-    return {track: null, miss: 'no-database'};
+  const lookup = await local.findTrack(deviceId, trackSlot, trackId, {trackBPM});
+  if (lookup.adapter === null) {
+    return {track: null, miss: 'no-database', switchedTo: null};
   }
 
-  const dbTrack = adapter.findTrack(trackId);
-
-  if (dbTrack === null) {
-    return {track: null, miss: 'track-absent'};
+  if (lookup.track === null) {
+    return {track: null, miss: 'track-absent', switchedTo: null};
   }
 
-  const anlz = await loadAnlz(dbTrack, 'DAT', anlzLoader({device, slot: trackSlot}));
+  const anlz = await loadAnlz(lookup.track, 'DAT', anlzLoader({device, slot: trackSlot}));
 
   const track: Track = {
-    ...dbTrack,
+    ...lookup.track,
     beatGrid: anlz.beatGrid,
     waveformHd: null,
   };
 
-  return {track, miss: null};
+  return {track, miss: null, switchedTo: lookup.switchedTo};
 }
