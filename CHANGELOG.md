@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.25.1
+
+- fix: a USB whose two database files disagree no longer shows the wrong track
+
+
 ## v0.25.0
 
 - docs: record how real CDJ-3000 hardware selects and defends its player number
