@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.25.2
+
+- chore: lockfiles record the metadata-connect 1.2.0 and onelibrary-connect 1.1.4 bumps
+
+
 ## v0.25.1
 
 - fix: a USB whose two database files disagree no longer shows the wrong track
