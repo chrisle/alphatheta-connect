@@ -75,7 +75,7 @@ describe('makeExtendedCues', () => {
           loopTime: 0,
           colorId: 0,
           lenComment: 10,
-          comment: 'Drop',
+          comment: 'Drop\0',
           colorCode: 0x2a,
           colorRed: 255,
           colorGreen: 0,
@@ -92,5 +92,23 @@ describe('makeExtendedCues', () => {
       colorCode: 0x2a,
       colorRgb: {r: 255, g: 0, b: 0},
     });
+  });
+
+  it('drops a comment that is only the trailing NUL', () => {
+    const [cue] = makeExtendedCues(
+      section([
+        {
+          hotCue: 0,
+          type: 1,
+          time: 0,
+          loopTime: 0,
+          colorId: 0,
+          lenComment: 2,
+          comment: '\0',
+        },
+      ])
+    );
+
+    expect(cue.comment).toBeUndefined();
   });
 });
