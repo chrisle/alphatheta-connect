@@ -113,6 +113,7 @@ export interface NetworkConfig {
 }
 
 interface ConnectionService {
+  vcdj: Device;
   announcer: Announcer | StagehandAnnouncer;
   heartbeat: StagehandHeartbeat | null;
   control: Control;
@@ -402,10 +403,10 @@ export class ProlinkNetwork {
     const database = new Database(localdb, remotedb, this.#deviceManager, this.#logger);
 
     // Create controller service
-    const control = new Control(this.#beatSocket, vcdj);
+    const control = new Control(this.#beatSocket, vcdj, this.#statusSocket);
 
     this.#state = NetworkState.Connected;
-    this.#connection = {announcer, heartbeat, control, remotedb, localdb, database};
+    this.#connection = {vcdj, announcer, heartbeat, control, remotedb, localdb, database};
 
     tx.finish();
   }
@@ -502,6 +503,15 @@ export class ProlinkNetwork {
    */
   get positionEmitter() {
     return this.#state === NetworkState.Connected ? this.#positionEmitter : null;
+  }
+
+  /**
+   * The device this network announces itself as, once connected: the
+   * `hostDevice` the status emitter's media query and the control service
+   * send from.
+   */
+  get virtualDevice() {
+    return this.#connection?.vcdj ?? null;
   }
 
   /**

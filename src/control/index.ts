@@ -5,7 +5,10 @@ import {CDJStatus, Device, DeviceType} from 'src/types';
 import {buildName} from 'src/utils';
 import {udpSend} from 'src/utils/udp';
 
+import {LoadSource, makeLoadTrackPacket} from './load';
 import {makeStagehandPrefWritePacket, makeStagehandTransportPacket} from './stagehand';
+
+export {LoadSource, makeLoadTrackPacket} from './load';
 
 interface Options {
   hostDevice: Device;
@@ -41,14 +44,58 @@ export default class Control {
    */
   #beatSocket: Socket;
   /**
+   * The socket bound to the status port, which the Load Track command must
+   * leave from: a CDJ-3000 ignores it from any other port. Absent when the
+   * control service was built without one.
+   */
+  #statusSocket: Socket | null;
+  /**
    * Randomized correlation byte per session for Stagehand commands
    */
   #correlationByte: number;
 
-  constructor(beatSocket: Socket, hostDevice: Device) {
+  constructor(
+    beatSocket: Socket,
+    hostDevice: Device,
+    statusSocket: Socket | null = null
+  ) {
     this.#beatSocket = beatSocket;
+    this.#statusSocket = statusSocket;
     this.#hostDevice = hostDevice;
     this.#correlationByte = Math.floor(Math.random() * 256);
+  }
+
+  /**
+   * Send one Stagehand transport packet (0x07) carrying `op` with the press /
+   * release flag, for opcodes the named methods do not cover.
+   */
+  async transport(device: Device, op: number, press: boolean) {
+    const p = makeStagehandTransportPacket(
+      this.#hostDevice,
+      op,
+      press,
+      this.#correlationByte
+    );
+    await udpSend(this.#beatSocket, p, BEAT_PORT, device.ip.address);
+  }
+
+  /**
+   * Tell a player to load a track, as rekordbox does when a row is dragged
+   * onto a deck: the Load Track command (0x19) from our status port to the
+   * player's. The player answers 0x1a and the load shows in its next status.
+   *
+   * `source` names where the track lives: a device number and its slot (a
+   * player's USB or SD, or the rekordbox slot of a library served over the
+   * link).
+   */
+  async loadTrack(device: Device, trackId: number, source: LoadSource) {
+    if (this.#statusSocket === null) {
+      throw new Error(
+        'loadTrack needs the status socket; connect through ProlinkNetwork'
+      );
+    }
+    const p = makeLoadTrackPacket(this.#hostDevice, device, trackId, source);
+    await udpSend(this.#statusSocket, p, STATUS_PORT, device.ip.address);
   }
 
   /**
