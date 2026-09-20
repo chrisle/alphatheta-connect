@@ -26,87 +26,97 @@ describe('Stagehand Control', () => {
   };
 
   describe('makeStagehandTransportPacket', () => {
-    it('should build a valid 56-byte 0x07 transport packet', () => {
-      const op = 0x0f; // PLAY
-      const press = true;
-      const correlationByte = 0xa5;
+    // The iPad app's PLAY pair to a CDJ-3000, as captured 2026-05-23
+    // (stagehand-allproto-20260523T142615.pcap): 0x0f then 0x14, both
+    // pressed. Byte 33 is the per-command byte the app varies.
+    const CAPTURED_PLAY_0F =
+      '5173707431576d4a4f4c07537461676568616e6400000000000000000000030100f700300000003a0001000f00010000';
+    const CAPTURED_PLAY_14 =
+      '5173707431576d4a4f4c07537461676568616e6400000000000000000000030100e800300000003a0001001400010000';
+    // Seek forward released.
+    const CAPTURED_SEEK_FORWARD_RELEASE =
+      '5173707431576d4a4f4c07537461676568616e6400000000000000000000030100ed00300000003a0001001a00000000';
 
-      const packet = makeStagehandTransportPacket(hostDevice, op, press, correlationByte);
+    it("is the iPad app's packet byte for byte", () => {
+      expect(
+        Buffer.from(makeStagehandTransportPacket(hostDevice, 0x0f, true, 0xf7)).toString(
+          'hex'
+        )
+      ).toBe(CAPTURED_PLAY_0F);
+      expect(
+        Buffer.from(makeStagehandTransportPacket(hostDevice, 0x14, true, 0xe8)).toString(
+          'hex'
+        )
+      ).toBe(CAPTURED_PLAY_14);
+      expect(
+        Buffer.from(makeStagehandTransportPacket(hostDevice, 0x1a, false, 0xed)).toString(
+          'hex'
+        )
+      ).toBe(CAPTURED_SEEK_FORWARD_RELEASE);
+    });
+
+    it('should build a 48-byte 0x07 transport packet', () => {
+      const packet = makeStagehandTransportPacket(hostDevice, 0x0f, true, 0xa5);
 
       expect(packet).toBeInstanceOf(Uint8Array);
-      expect(packet.length).toBe(56);
-
-      // Header matches magic
+      expect(packet.length).toBe(48);
       expect(Buffer.from(packet.slice(0, 10))).toEqual(Buffer.from(PROLINK_HEADER));
-
-      // Packet Type / Opcode
       expect(packet[10]).toBe(0x07);
 
-      // Name matches padded hostDevice name
+      // 19-byte name field, then the unicast header
       expect(packet[11]).toBe(83); // 'S'
       expect(packet[19]).toBe(100); // 'd'
-      expect(packet[20]).toBe(0); // padded zero
-
-      // Constants
+      expect(packet[20]).toBe(0);
+      expect(packet[30]).toBe(0x03);
       expect(packet[31]).toBe(0x01);
-      expect(packet[32]).toBe(0x03);
+      expect(packet[32]).toBe(0x00);
 
-      // Correlation byte
-      expect(packet[33]).toBe(correlationByte);
-
-      // Body length 0x0030
+      expect(packet[33]).toBe(0xa5);
       expect(packet[34]).toBe(0x00);
       expect(packet[35]).toBe(0x30);
-
-      // Stagehand sub-id
-      expect(packet[40]).toBe(0x3a);
-
-      // Opcode
-      expect(packet[44]).toBe(op);
-
-      // Press / Release flag
-      expect(packet[46]).toBe(0x01);
+      expect(packet[39]).toBe(0x3a);
+      expect(packet[41]).toBe(0x01);
+      expect(packet[43]).toBe(0x0f);
+      expect(packet[45]).toBe(0x01);
     });
 
     it('should support press=false as release flag', () => {
       const packet = makeStagehandTransportPacket(hostDevice, 0x1a, false, 0x12);
-      expect(packet[46]).toBe(0x00);
+      expect(packet[45]).toBe(0x00);
     });
   });
 
   describe('makeStagehandPrefWritePacket', () => {
-    it('should build a valid 124-byte 0x6b preference write packet', () => {
+    // The iPad app switching on-air display ON, same capture.
+    const CAPTURED_ON_AIR_ON =
+      '5173707431576d4a4f4c6b537461676568616e64000000000000000000000301003a00500100000000000000810000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
+
+    it("is the iPad app's packet byte for byte", () => {
+      expect(
+        Buffer.from(makeStagehandPrefWritePacket(hostDevice, {onAir: 'on'})).toString(
+          'hex'
+        )
+      ).toBe(CAPTURED_ON_AIR_ON);
+    });
+
+    it('should build a 116-byte 0x6b preference write packet', () => {
       const packet = makeStagehandPrefWritePacket(hostDevice, {
         onAir: 'on',
         quantize: 2,
       });
 
       expect(packet).toBeInstanceOf(Uint8Array);
-      expect(packet.length).toBe(124);
-
-      // Header matches magic
+      expect(packet.length).toBe(116);
       expect(Buffer.from(packet.slice(0, 10))).toEqual(Buffer.from(PROLINK_HEADER));
-
-      // Opcode
       expect(packet[10]).toBe(0x6b);
-
-      // Name matches with trailing byte 30 set to 0x03
       expect(packet[11]).toBe(83); // 'S'
-      expect(packet[30]).toBe(0x03); // Last byte of 20-byte field (index 19 of buildName)
-
-      // Constants
+      expect(packet[30]).toBe(0x03);
       expect(packet[31]).toBe(0x01);
-      expect(packet[32]).toBe(0x03);
+      expect(packet[32]).toBe(0x00);
       expect(packet[33]).toBe(0x3a);
-
-      // Body length 0x0050
       expect(packet[34]).toBe(0x00);
       expect(packet[35]).toBe(0x50);
-
-      // Transaction flag
       expect(packet[36]).toBe(0x01);
-
-      // Preferences values
       expect(packet[44]).toBe(0x81); // onAir ON
       expect(packet[60]).toBe(0x82); // quantize index 2 (0x80 | 2)
     });

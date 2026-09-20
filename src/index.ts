@@ -1,6 +1,11 @@
+export type {LoadSource} from './control';
+export {default as Control} from './control';
 export * from './entities';
 export * from './mixstatus';
 export * from './network';
+export * from './remote';
+export * from './remote/hue';
+export {createServer as createRemoteServer} from './remote/server';
 export {default as PositionEmitter} from './status/position';
 
 // Passive mode (pcap-based monitoring without announcing a VCDJ)
