@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.27.0
+
+- feat: a Stagehand remote drives CDJs and the booth's power for integration tests
+
+
 ## v0.26.1
 
 - fix: ANLZ cue lists no longer contain null entries (#7)
