@@ -23,22 +23,22 @@ Alternative implementations of the Prolink protocol: [Java](https://github.com/D
 
 ## Features
 
-- **Streaming Service Detection** *(new)* - Detect when tracks are loaded from
+- **Streaming Service Detection** _(new)_ - Detect when tracks are loaded from
   streaming services (Beatport, Streaming Direct Play, TIDAL, Apple Music) via
   `MediaSlot` enum. Supports CDJ-3000X CloudDirectPlay streaming features.
 
-- **Support for AlphaTheta Opus Quad, XDJ-RX3, XDJ-RX2, XDJ-RX, and XDJ-XZ** *(new)* -
+- **Support for AlphaTheta Opus Quad, XDJ-RX3, XDJ-RX2, XDJ-RX, and XDJ-XZ** _(new)_ -
   Passive mode monitoring via pcap-based packet capture for all-in-one controllers
   where traditional virtual CDJ connection isn't possible.
   See [ALL_IN_ONE_UNITS.md](docs/ALL_IN_ONE_UNITS.md) for details.
 
-- **Pioneer Stagehand Connection Mode** *(new)* - Actively join the Pro DJ Link
+- **Pioneer Stagehand Connection Mode** _(new)_ - Actively join the Pro DJ Link
   network as a virtual Stagehand iPad device. Access rich, high-frequency telemetry
   events (mixer faders, EQ values, high-frequency VU level samples) and direct remote
   control over CDJs (play, pause, seek, track skip, preference writes like On-Air).
   See [STAGEHAND.md](docs/STAGEHAND.md) for details.
 
-- **OneLibrary Support** *(new)* - Full support for rekordbox 7.x's new OneLibrary
+- **OneLibrary Support** _(new)_ - Full support for rekordbox 7.x's new OneLibrary
   format (exportLibrary.db) with SQLCipher encryption, including tracks, playlists,
   cues, hot cue banks, myTags, and history.
 
@@ -56,15 +56,15 @@ Alternative implementations of the Prolink protocol: [Java](https://github.com/D
   sequence for better compatibility with certain device configurations.
   See [FULL_STARTUP.md](docs/FULL_STARTUP.md) for details.
 
-- **Metadata Extraction via NFS** *(new)* - Extract complete track metadata (title,
+- **Metadata Extraction via NFS** _(new)_ - Extract complete track metadata (title,
   artist, album, BPM, key, artwork) directly from audio files on connected media
   using partial file reads — only file headers are downloaded, not entire files.
 
-- **3-Band Waveforms & Vocal Detection** *(new)* - Parse `.2EX` analysis files for
+- **3-Band Waveforms & Vocal Detection** _(new)_ - Parse `.2EX` analysis files for
   3-band color waveform preview (PWV6), 3-band color detail waveform (PWV7), and
   vocal detection config (PWVC).
 
-- **Track Analysis API** *(new)* - Unified `getTrackAnalysis()` method that retrieves
+- **Track Analysis API** _(new)_ - Unified `getTrackAnalysis()` method that retrieves
   all analysis data (extended cues, song structure, waveforms, 3-band waveforms,
   vocal config) from both EXT and 2EX files in a single call.
 
@@ -74,6 +74,8 @@ Alternative implementations of the Prolink protocol: [Java](https://github.com/D
   - Multiple waveform formats (PWAV, PWV2, PWV3, PWV4, PWV5, PWV6, PWV7)
   - Vocal detection config (PWVC)
   - See [EXTENDED_ANLZ.md](docs/EXTENDED_ANLZ.md) for details
+  - See [USB_EXPORT.md](docs/USB_EXPORT.md) for complete USB format tables,
+    analysis paths, cue palettes, OneLibrary schema and reader limitations
 
 - **CDJ-3000 Features** - Complete support for CDJ-3000 specific features:
   - Absolute position tracking (30ms updates)
