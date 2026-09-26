@@ -32,11 +32,39 @@ type TrackQueryOpts = HandlerOpts<{
 }>;
 
 /**
+ * Everything a player sent back for a metadata query, before any of it is
+ * mapped onto a Track. Item types the Track has no field for are dropped by
+ * that mapping, so this is the only place they can still be seen.
+ */
+export interface MetadataResponse {
+  /**
+   * How many items the player said it would send
+   */
+  itemsAvailable: number;
+  /**
+   * The items it sent, in order
+   */
+  items: Array<Items[ItemType]>;
+}
+
+type MetadataQueryOpts = HandlerOpts<{
+  /**
+   * The ID of the track to query for
+   */
+  trackId: number;
+  /**
+   * Receives the player's response as it came back, for callers that need to
+   * explain a lookup that produced no title or artist
+   */
+  onResponse?: (response: MetadataResponse) => void;
+}>;
+
+/**
  * Lookup track metadata from rekordbox and coerce it into a Track entity
  */
-async function getMetadata(opts: TrackQueryOpts) {
+async function getMetadata(opts: MetadataQueryOpts) {
   const {conn, lookupDescriptor, span, args} = opts;
-  const {trackId} = args;
+  const {trackId, onResponse} = args;
 
   const request = new Message({
     type: Request.GetMetadata,
@@ -76,9 +104,13 @@ async function getMetadata(opts: TrackQueryOpts) {
   // NOTE: We do a bit of any-ing here to help typescript understand we're
   // discriminating the type by our object key
   const trackItems: Pick<Items, MetadataItems> = {} as any;
+  const received: Array<Items[ItemType]> = [];
   for await (const item of items) {
     trackItems[item.type] = item as any;
+    received.push(item);
   }
+
+  onResponse?.({itemsAvailable: resp.data.itemsAvailable, items: received});
 
   // Translate our trackItems into a (partial) Track entity.
   // Use optional chaining for all fields since streaming tracks may omit some.
@@ -361,7 +393,14 @@ async function getTrackInfo(opts: TrackQueryOpts) {
     infoItems[item.type] = item as any;
   }
 
-  return infoItems[ItemType.Path].path;
+  const path = infoItems[ItemType.Path];
+  if (path === undefined) {
+    throw new Error(
+      `Player sent no file path (${resp.data.itemsAvailable} item(s) available)`
+    );
+  }
+
+  return path.path;
 }
 
 type PlaylistQueryOpts = HandlerOpts<{

@@ -140,8 +140,8 @@ const transformItem = {
   [ItemType.Rating]: (a: ItemData) => ({rating: a.mainId}),
   [ItemType.Tempo]: (a: ItemData) => ({bpm: a.mainId / 100}),
   [ItemType.Duration]: (a: ItemData) => ({duration: a.mainId}),
-  [ItemType.Unknown01]: (_: ItemData) => null,
-  [ItemType.Unknown02]: (_: ItemData) => null,
+  [ItemType.Unknown01]: (a: ItemData) => a,
+  [ItemType.Unknown02]: (a: ItemData) => a,
 
   [ItemType.ColorNone]: mapIdName,
   [ItemType.ColorPink]: mapIdName,
@@ -222,9 +222,10 @@ export const fieldsToItem = (args: Field[]) => {
   let transformer = transformItem[type];
 
   // Typescript gives us safety, but it is possible there is an itemType we're
-  // not aware of yet.
+  // not aware of yet. Keep its raw fields so whoever reads the response can
+  // still see what the player sent.
   if (transformer === undefined) {
-    transformer = () => null;
+    transformer = (a: ItemData) => a;
 
     Telemetry.captureMessage(
       `No item transformer registered for item type ${type}`,

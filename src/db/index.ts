@@ -119,7 +119,7 @@ class Database {
     let track: Track | null = null;
 
     if (strategy === LookupStrategy.Remote) {
-      track = await GetMetadata.viaRemote(this.#remoteDatabase, callOpts);
+      track = await GetMetadata.viaRemote(this.#remoteDatabase, callOpts, this.#logger);
     }
 
     if (strategy === LookupStrategy.Local) {
@@ -172,7 +172,7 @@ class Database {
    */
   async #metadataViaRemoteFallback(opts: Required<GetMetadata.Options>) {
     try {
-      const track = await GetMetadata.viaRemote(this.#remoteDatabase, opts);
+      const track = await GetMetadata.viaRemote(this.#remoteDatabase, opts, this.#logger);
       if (track === null) {
         this.#logger.warn(
           `Remote fallback found no track ${opts.trackId} on device ${opts.deviceId}`
