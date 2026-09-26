@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.28.0
+
+- test: the OneLibrary adapter tests store track lengths in seconds like real exports, so the publish passes again
+- feat: a player answer with no title or artist is logged item by item
+
+
 ## v0.27.1
 
 - docs: document USB formats and reader support
