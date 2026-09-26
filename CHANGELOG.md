@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.27.1
+
+- docs: document USB formats and reader support
+
+
 ## v0.27.0
 
 - feat: a Stagehand remote drives CDJs and the booth's power for integration tests
