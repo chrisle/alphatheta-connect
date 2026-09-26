@@ -190,7 +190,7 @@ db.exec(`
   -- Track 1: Full metadata
   INSERT INTO content VALUES (
     1, 'Test Track', 'test track', 'Extended Mix',
-    12800, 300000, 1, 1,
+    12800, 300, 1, 1,
     1, 3, NULL, NULL, NULL,
     1, 1, 1, 1, 1, 1,
     'Test comment', 5, 2024, '2024-01-01', '2024-01-01', '2024-01-01',
@@ -203,7 +203,7 @@ db.exec(`
   -- Track 2: Minimal metadata (null relations)
   INSERT INTO content VALUES (
     2, 'Another Track', 'another track', NULL,
-    14000, 240000, 2, 1,
+    14000, 240, 2, 1,
     2, NULL, NULL, NULL, NULL,
     2, 2, NULL, 2, 2, NULL,
     NULL, 4, 2023, '2023-06-15', '2023-06-15', '2023-06-15',
@@ -216,7 +216,7 @@ db.exec(`
   -- Track 3: Edge case - no artist, minimal data
   INSERT INTO content VALUES (
     3, 'Unknown Track', 'unknown track', NULL,
-    0, 180000, 1, 1,
+    0, 180, 1, 1,
     NULL, NULL, NULL, NULL, NULL,
     NULL, NULL, NULL, NULL, NULL, NULL,
     NULL, 0, NULL, NULL, NULL, '2024-01-15',
@@ -229,7 +229,7 @@ db.exec(`
   -- Track 4 & 5: For playlist/history testing
   INSERT INTO content VALUES (
     4, 'Playlist Track A', 'playlist track a', NULL,
-    13000, 210000, 3, 1,
+    13000, 210, 3, 1,
     1, NULL, NULL, NULL, NULL,
     1, 1, 1, 3, 3, 1,
     NULL, 3, 2024, NULL, NULL, '2024-01-10',
@@ -241,7 +241,7 @@ db.exec(`
 
   INSERT INTO content VALUES (
     5, 'Playlist Track B', 'playlist track b', NULL,
-    13500, 225000, 4, 1,
+    13500, 225, 4, 1,
     2, NULL, NULL, NULL, NULL,
     2, 2, 2, 1, 4, 2,
     NULL, 4, 2024, NULL, NULL, '2024-01-10',

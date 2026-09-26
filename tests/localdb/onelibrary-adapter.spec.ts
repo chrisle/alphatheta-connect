@@ -46,7 +46,7 @@ describeIfFixture('OneLibraryAdapter', () => {
         expect(track!.title).toBe('Test Track');
         expect(track!.mixName).toBe('Extended Mix');
         expect(track!.tempo).toBe(128); // bpmx100 / 100
-        expect(track!.duration).toBe(300); // milliseconds / 1000
+        expect(track!.duration).toBe(300); // seconds, as stored
         expect(track!.rating).toBe(5);
         expect(track!.trackNumber).toBe(1);
         expect(track!.discNumber).toBe(1);
@@ -185,12 +185,14 @@ describeIfFixture('OneLibraryAdapter', () => {
         expect(track2!.tempo).toBe(140); // 14000 / 100
       });
 
-      it('converts duration from milliseconds to seconds', () => {
+      // rekordbox stores content.length in whole seconds, the same unit as
+      // the PDB's track duration (onelibrary-connect 1.1.6).
+      it('reads duration as seconds', () => {
         const track1 = adapter.findTrack(1);
         const track2 = adapter.findTrack(2);
 
-        expect(track1!.duration).toBe(300); // 300000ms
-        expect(track2!.duration).toBe(240); // 240000ms
+        expect(track1!.duration).toBe(300);
+        expect(track2!.duration).toBe(240);
       });
 
       it('handles zero BPM', () => {
