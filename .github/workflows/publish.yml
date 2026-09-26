@@ -205,16 +205,22 @@ jobs:
 
           echo "Verifying ${PACKAGE_NAME}@${EXPECTED_VERSION} on npm..."
 
-          # Poll npm registry (propagation can take a few seconds)
-          for i in 1 2 3 4 5; do
-            PUBLISHED_VERSION=$(npm view "${PACKAGE_NAME}" version 2>/dev/null || echo "")
+          # The registry takes longer than a minute to serve a new version at
+          # times, and a verify that gives up first turns a good publish red
+          # (0.28.0). Ask for the exact version, bypassing npm's cache, for up
+          # to five minutes. Same step as chrisle/connector-ci.
+          DEADLINE=$(( $(date +%s) + 300 ))
+          ATTEMPT=0
+          until [ "$(date +%s)" -ge "$DEADLINE" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            PUBLISHED_VERSION=$(npm view "${PACKAGE_NAME}@${EXPECTED_VERSION}" version --prefer-online 2>/dev/null || echo "")
             if [ "$PUBLISHED_VERSION" = "$EXPECTED_VERSION" ]; then
               echo "Verified: ${PACKAGE_NAME}@${PUBLISHED_VERSION} is live on npm"
               exit 0
             fi
-            echo "Attempt $i: got '${PUBLISHED_VERSION}', expected '${EXPECTED_VERSION}'. Retrying in 10s..."
-            sleep 10
+            echo "Attempt $ATTEMPT: ${PACKAGE_NAME}@${EXPECTED_VERSION} not visible yet. Retrying in 15s..."
+            sleep 15
           done
 
-          echo "::error::npm shows ${PACKAGE_NAME}@${PUBLISHED_VERSION} but expected ${EXPECTED_VERSION}"
+          echo "::error::${PACKAGE_NAME}@${EXPECTED_VERSION} still not on npm after 5 minutes"
           exit 1
