@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.28.1
+
+- docs(STAGEHAND): add real-hardware testing notes from CDJ-3000 capture sessions
+- ci: a publish that reached npm is no longer reported as failed because the registry was slow to show it
+
+
 ## v0.28.0
 
 - test: the OneLibrary adapter tests store track lengths in seconds like real exports, so the publish passes again
