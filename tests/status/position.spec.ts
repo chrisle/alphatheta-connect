@@ -121,6 +121,23 @@ describe('positionFromPacket', () => {
     expect(position?.pitch).toBe(-2.0);
   });
 
+  test('returns undefined for any truncated packet', () => {
+    const packet = Buffer.alloc(0x40);
+
+    PROLINK_HEADER.forEach((byte, i) => (packet[i] = byte));
+
+    packet[0x20] = 0x00;
+    packet[0x21] = 0x03;
+    packet.writeUInt16BE(0x0038, 0x22);
+
+    for (let length = 0; length < 0x34; length++) {
+      const truncated = packet.subarray(0, length);
+
+      expect(() => positionFromPacket(truncated)).not.toThrow();
+      expect(positionFromPacket(truncated)).toBeUndefined();
+    }
+  });
+
   test('handles track at start (playhead = 0)', () => {
     const packet = Buffer.alloc(0x40);
 

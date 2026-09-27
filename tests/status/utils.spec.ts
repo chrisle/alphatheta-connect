@@ -11,16 +11,29 @@ import {
 import {MediaColor, MediaSlot, TrackType} from 'src/types';
 
 describe('statusFromPacket', () => {
-  it('fails with error for non-prolink packet', () => {
-    const packet = Buffer.from([]);
-
-    expect(() => statusFromPacket(packet)).toThrow();
+  it('ignores packets without the prolink header', () => {
+    expect(statusFromPacket(Buffer.from([]))).toBeUndefined();
+    expect(statusFromPacket(Buffer.alloc(0x11c, 0xff))).toBeUndefined();
   });
 
   it('only handles announce packets which are large enough', () => {
     const packet = Buffer.from([...PROLINK_HEADER, 0x00, 0x00]);
 
     expect(statusFromPacket(packet)).toBeUndefined();
+  });
+
+  it('ignores status packets that end before the packet counter', async () => {
+    const packet = await readMock('status-simple.dat');
+
+    for (let length = 0; length < packet.length; length++) {
+      const truncated = packet.subarray(0, length);
+
+      expect(() => statusFromPacket(truncated)).not.toThrow();
+
+      if (length < 0xcc) {
+        expect(statusFromPacket(truncated)).toBeUndefined();
+      }
+    }
   });
 
   it('handles a real announce packet', async () => {
@@ -53,16 +66,26 @@ describe('statusFromPacket', () => {
 });
 
 describe('mediaSlotFromPacket', () => {
-  it('fails with error for non-prolink packet', () => {
-    const packet = Buffer.from([]);
-
-    expect(() => mediaSlotFromPacket(packet)).toThrow();
+  it('ignores packets without the prolink header', () => {
+    expect(mediaSlotFromPacket(Buffer.from([]))).toBeUndefined();
+    expect(mediaSlotFromPacket(Buffer.alloc(0xc0, 0xff))).toBeUndefined();
   });
 
   it('only handles media slot packet types', () => {
     const packet = Buffer.from([...PROLINK_HEADER, 0x05]);
 
     expect(mediaSlotFromPacket(packet)).toBeUndefined();
+  });
+
+  it('ignores truncated media slot packets', async () => {
+    const packet = await readMock('media-slot-usb.dat');
+
+    for (let length = 0; length < packet.length; length++) {
+      const truncated = packet.subarray(0, length);
+
+      expect(() => mediaSlotFromPacket(truncated)).not.toThrow();
+      expect(mediaSlotFromPacket(truncated)).toBeUndefined();
+    }
   });
 
   it('handles a real media slot packet', async () => {

@@ -6,12 +6,15 @@ const MAX_INT16 = Math.pow(2, 16) - 1;
 const MAX_INT9 = Math.pow(2, 9) - 1;
 
 export function statusFromPacket(packet: Buffer) {
+  // The status port is an ordinary UDP port that other software on the network
+  // can send to, so a datagram that is not ours is ignored rather than thrown.
   if (packet.indexOf(PROLINK_HEADER) !== 0) {
-    throw new Error('CDJ status packet does not start with the expected header');
+    return undefined;
   }
 
-  // Rekordbox sends some short status packets that we can just ignore.
-  if (packet.length < 0xc8) {
+  // Rekordbox sends some short status packets that we can just ignore. The
+  // packet counter at 0xc8 is the last field every status packet carries.
+  if (packet.length < 0xcc) {
     return undefined;
   }
 
@@ -51,8 +54,8 @@ export function statusFromPacket(packet: Buffer) {
     beatsUntilCue,
     beat,
     // Player-type / capability byte (dysentery's "nx"). Guarded because the
-    // length check above only guarantees 0xc8; older/short packets may not
-    // reach 0xcc, in which case the field reads as 0 (version-gated to 0 anyway).
+    // length check above only guarantees 0xcc; older/short packets may end
+    // there, in which case the field reads as 0 (version-gated to 0 anyway).
     deviceType: packet.length > 0xcc ? packet[0xcc] : 0,
     packetNum: packet.readUInt32BE(0xc8),
   };
@@ -62,10 +65,16 @@ export function statusFromPacket(packet: Buffer) {
 
 export function mediaSlotFromPacket(packet: Buffer) {
   if (packet.indexOf(PROLINK_HEADER) !== 0) {
-    throw new Error('CDJ media slot packet does not start with the expected header');
+    return undefined;
   }
 
   if (packet[0x0a] !== 0x06) {
+    return undefined;
+  }
+
+  // A media response runs through the free-bytes field, which ends at 0xc0;
+  // a shorter packet is truncated.
+  if (packet.length < 0xc0) {
     return undefined;
   }
 
@@ -139,9 +148,14 @@ export function positionFromPacket(packet: Buffer): CDJStatus.PositionState | un
     return undefined;
   }
 
-  // Check minimum length for position packet
+  // Check minimum length for position packet. The length comes first: a
+  // packet too short to hold lenr would make the read below throw.
+  if (packet.length < 0x34) {
+    return undefined;
+  }
+
   const lenr = packet.readUInt16BE(0x22);
-  if (lenr < 0x0c || packet.length < 0x34) {
+  if (lenr < 0x0c) {
     return undefined;
   }
 
@@ -180,6 +194,12 @@ export function positionFromPacket(packet: Buffer): CDJStatus.PositionState | un
  */
 export function onAirFromPacket(packet: Buffer): CDJStatus.OnAirStatus | undefined {
   if (packet.indexOf(PROLINK_HEADER) !== 0) {
+    return undefined;
+  }
+
+  // Both variants are at least 0x2e bytes long; a shorter packet may not even
+  // hold lenr, and reading it would throw.
+  if (packet.length < 0x2e) {
     return undefined;
   }
 
