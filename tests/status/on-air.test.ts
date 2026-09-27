@@ -126,6 +126,23 @@ describe('on-air packet parsing', () => {
       expect(onAir).toBeUndefined();
     });
 
+    it('should return undefined for any truncated packet', () => {
+      const header = Buffer.from('Qspt1WmJOL', 'ascii');
+      const packet = Buffer.alloc(0x36);
+      header.copy(packet);
+      packet[0x0a] = 0x06;
+      packet[0x20] = 0x03;
+      packet[0x21] = 0x21;
+      packet.writeUInt16BE(0x0011, 0x22);
+
+      for (let length = 0; length < packet.length; length++) {
+        const truncated = packet.subarray(0, length);
+
+        expect(() => onAirFromPacket(truncated)).not.toThrow();
+        expect(onAirFromPacket(truncated)).toBeUndefined();
+      }
+    });
+
     it('should handle all channels on-air', () => {
       const header = Buffer.from('Qspt1WmJOL', 'ascii');
       const packet = Buffer.alloc(0x36);

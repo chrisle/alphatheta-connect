@@ -5,16 +5,30 @@ import {deviceFromPacket} from 'src/devices/utils';
 import {DeviceType} from 'src/types';
 
 describe('deviceFromPacket', () => {
-  it('fails with error for non-prolink packet', () => {
-    const packet = Buffer.from([]);
-
-    expect(() => deviceFromPacket(packet)).toThrow();
+  it('ignores packets without the prolink header', () => {
+    expect(deviceFromPacket(Buffer.from([]))).toBeNull();
+    expect(deviceFromPacket(Buffer.from('not a prolink packet'))).toBeNull();
+    expect(deviceFromPacket(Buffer.from([0x00, ...PROLINK_HEADER, 0x06]))).toBeNull();
   });
 
   it('only handles announce (0x06) packets', () => {
     const packet = Buffer.from([...PROLINK_HEADER, 0x05]);
 
     expect(deviceFromPacket(packet)).toBeNull();
+  });
+
+  it('ignores truncated announce packets', async () => {
+    const packet = await readMock('announce-cdj-2.dat');
+
+    for (let length = 0; length < packet.length; length++) {
+      const truncated = packet.subarray(0, length);
+
+      expect(() => deviceFromPacket(truncated)).not.toThrow();
+
+      if (length < 0x30) {
+        expect(deviceFromPacket(truncated)).toBeNull();
+      }
+    }
   });
 
   it('handles a real announce packet', async () => {

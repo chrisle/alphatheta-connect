@@ -5,13 +5,23 @@ import {Device} from 'src/types';
 
 /**
  * Converts a announce packet to a device object.
+ *
+ * Returns null for anything that is not a complete keep-alive (0x06) packet.
+ * The announce port is an ordinary UDP port that other software on the network
+ * can send to, so a datagram that is not ours is ignored rather than thrown.
  */
 export function deviceFromPacket(packet: Buffer) {
   if (packet.indexOf(PROLINK_HEADER) !== 0) {
-    throw new Error('Announce packet does not start with expected header');
+    return null;
   }
 
   if (packet[0x0a] !== 0x06) {
+    return null;
+  }
+
+  // The IP address at 0x2c is the last field read with a bounds check; a
+  // packet that ends before it is truncated.
+  if (packet.length < 0x30) {
     return null;
   }
 
