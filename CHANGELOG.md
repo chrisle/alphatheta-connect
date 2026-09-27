@@ -1,5 +1,10 @@
 # Change log
 
+## v0.28.4
+
+- ci: retire release.js so fixes pushed to main reach npm (NP3-461)
+
+
 ## v0.28.3
 
 - chore: release script tolerates commands run with inherited stdio
