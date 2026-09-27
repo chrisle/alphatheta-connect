@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.28.2
+
+- fix: metadata lookups recover when a player closes its database connection
+
+
 ## v0.28.1
 
 - docs(STAGEHAND): add real-hardware testing notes from CDJ-3000 capture sessions
