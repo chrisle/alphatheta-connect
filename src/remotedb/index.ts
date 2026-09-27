@@ -136,6 +136,15 @@ export class Connection {
     return this.#lock.runExclusive(() => Message.fromStream(this.#socket, expect, span));
   }
 
+  /**
+   * False once the device has closed its end of the connection or the socket
+   * has failed. Every write after that fails with "write after end".
+   */
+  get isOpen() {
+    const {stream} = this.#socket;
+    return stream.writable && !stream.closed && !stream.destroyed;
+  }
+
   close() {
     this.#socket.destroy();
   }
@@ -335,7 +344,13 @@ export default class RemoteDatabase {
       args: [],
     });
 
-    await conn.writeMessage(goodbye, tx);
+    // The goodbye is a courtesy. A device that has already closed the
+    // connection can't receive it, and its socket still has to be released.
+    try {
+      await conn.writeMessage(goodbye, tx);
+    } catch {
+      // Ignore errors during disconnect
+    }
 
     conn.close();
     this.#connections.delete(device.id);
@@ -365,6 +380,17 @@ export default class RemoteDatabase {
 
     try {
       let conn = this.#connections.get(deviceId);
+
+      // A device that closed its end of the connection (it restarted, or it
+      // dropped off the network and came back) would fail every query on it
+      // with "write after end". Open a new one instead.
+      if (conn !== undefined && !conn.isOpen) {
+        conn.close();
+        this.#connections.delete(deviceId);
+        this.#queryIds.delete(deviceId);
+        conn = undefined;
+      }
+
       if (conn === undefined) {
         await this.connectToDevice(device);
       }
