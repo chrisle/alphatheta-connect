@@ -103,6 +103,24 @@ describe('DeviceManager', () => {
     expect(dm.devices.size).toBe(0);
   });
 
+  it('swallows parse errors instead of crashing the socket', () => {
+    // A malformed/truncated datagram can make deviceFromPacket throw. The
+    // handler runs directly on the UDP 'message' event, so an uncaught throw
+    // here crashes the process (NP3-446).
+    const dm = new DeviceManager(mockSocket, {deviceTimeout: 100});
+
+    const announceFn = jest.fn();
+    dm.on('announced', announceFn);
+
+    dfpMock.mockImplementation(() => {
+      throw new Error('boom');
+    });
+
+    expect(() => mockSocket.emit('message', Buffer.of())).not.toThrow();
+    expect(announceFn).not.toHaveBeenCalled();
+    expect(dm.devices.size).toBe(0);
+  });
+
   it('does not announce or track virtual CDJ announcements', () => {
     const dm = new DeviceManager(mockSocket, {deviceTimeout: 100});
 

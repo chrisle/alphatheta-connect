@@ -138,7 +138,15 @@ class DeviceManager {
   }
 
   #handleAnnounce = (message: Buffer) => {
-    const device = deviceFromPacket(message);
+    // This runs on every UDP datagram the announce socket receives, so a parse
+    // failure here would surface as an uncaught exception on the socket and
+    // crash the process. Foreign or truncated packets are ignored instead.
+    let device: Device | null;
+    try {
+      device = deviceFromPacket(message);
+    } catch {
+      return;
+    }
 
     if (device === null) {
       return;

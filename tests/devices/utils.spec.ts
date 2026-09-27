@@ -5,10 +5,12 @@ import {deviceFromPacket} from 'src/devices/utils';
 import {DeviceType} from 'src/types';
 
 describe('deviceFromPacket', () => {
-  it('fails with error for non-prolink packet', () => {
+  it('returns null for a non-prolink packet', () => {
+    // Foreign UDP traffic arrives on the announce socket constantly; it must
+    // be ignored, not throw and crash the socket handler (NP3-446).
     const packet = Buffer.from([]);
 
-    expect(() => deviceFromPacket(packet)).toThrow();
+    expect(deviceFromPacket(packet)).toBeNull();
   });
 
   it('only handles announce (0x06) packets', () => {

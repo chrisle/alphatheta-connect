@@ -5,10 +5,15 @@ import {Device} from 'src/types';
 
 /**
  * Converts a announce packet to a device object.
+ *
+ * Returns null for any packet that is not a stage-3 Pro DJ Link announce. The
+ * announce socket receives every UDP broadcast on its port, so foreign traffic
+ * (other apps, other protocols) is normal and must be ignored, not treated as
+ * an error.
  */
 export function deviceFromPacket(packet: Buffer) {
   if (packet.indexOf(PROLINK_HEADER) !== 0) {
-    throw new Error('Announce packet does not start with expected header');
+    return null;
   }
 
   if (packet[0x0a] !== 0x06) {
