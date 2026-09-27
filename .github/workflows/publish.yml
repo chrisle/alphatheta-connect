@@ -1,5 +1,10 @@
 name: Publish to npm
 
+# Every push to main is a release: the workflow picks the bump from the commit
+# messages, tags, and publishes to npm via trusted publishing (OIDC). Do not
+# bump, tag, or `npm publish` by hand — a `chore: release v*` commit is
+# skipped here, so a hand-made release never reaches npm.
+
 on:
   push:
     branches:
@@ -11,8 +16,9 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    # Skip if this is a version bump commit from the bot
-    if: "!contains(github.event.head_commit.message, 'chore: release v')"
+    # Skip the bot's own version-bump commit. Match the subject only: a commit
+    # whose body merely mentions the release message must still publish.
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
 
     steps:
       - name: Checkout alphatheta-connect

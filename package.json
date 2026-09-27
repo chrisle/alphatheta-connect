@@ -37,10 +37,7 @@
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "preversion": "yarn lint; yarn test",
     "prepare": "ts-patch install -s && npm run build",
-    "prepublishOnly": "npm run build",
-    "release": "node .github/release.js",
-    "release:patch": "node .github/release.js --patch",
-    "release:major": "node .github/release.js --major"
+    "prepublishOnly": "npm run build"
   },
   "files": [
     "lib/"
