@@ -1,3 +1,10 @@
+# Change log
+
+## v0.28.3
+
+- chore: release script tolerates commands run with inherited stdio
+- fix: ignore non-Pro DJ Link packets on the announce socket instead of throwing (NP3-446)
+
 # Changelog
 
 ## v0.28.2
