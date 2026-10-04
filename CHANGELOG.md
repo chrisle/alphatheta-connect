@@ -1,5 +1,10 @@
 # Change log
 
+## v0.28.5
+
+- fix: read native streaming metadata
+
+
 ## v0.28.4
 
 - ci: retire release.js so fixes pushed to main reach npm (NP3-461)
