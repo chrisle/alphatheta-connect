@@ -92,7 +92,8 @@ async function getMetadata(opts: MetadataQueryOpts) {
     | ItemType.BitRate
     | ItemType.Remixer
     | ItemType.Year
-    | ItemType.OriginalArtist;
+    | ItemType.OriginalArtist
+    | ItemType.StreamingTrackMetadata;
 
   const items = renderItems<MetadataItems>(
     conn,
@@ -114,9 +115,10 @@ async function getMetadata(opts: MetadataQueryOpts) {
 
   // Translate our trackItems into a (partial) Track entity.
   // Use optional chaining for all fields since streaming tracks may omit some.
+  const streamingMetadata = trackItems[ItemType.StreamingTrackMetadata];
   const track: entities.Track = {
     id: trackItems[ItemType.TrackTitle]?.id ?? 0,
-    title: trackItems[ItemType.TrackTitle]?.title ?? '',
+    title: trackItems[ItemType.TrackTitle]?.title ?? streamingMetadata?.title ?? '',
     duration: trackItems[ItemType.Duration]?.duration ?? 0,
     tempo: trackItems[ItemType.Tempo]?.bpm ?? 0,
     comment: trackItems[ItemType.Comment]?.comment ?? '',
@@ -126,7 +128,9 @@ async function getMetadata(opts: MetadataQueryOpts) {
 
     artwork: {id: trackItems[ItemType.TrackTitle]?.artworkId ?? 0},
     album: trackItems[ItemType.AlbumTitle] ?? null,
-    artist: trackItems[ItemType.Artist] ?? null,
+    artist:
+      trackItems[ItemType.Artist] ??
+      (streamingMetadata?.artist ? {id: 0, name: streamingMetadata.artist} : null),
     genre: trackItems[ItemType.Genre] ?? null,
     key: trackItems[ItemType.Key] ?? null,
     color: findColor(Object.values(trackItems)) ?? null,

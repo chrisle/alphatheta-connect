@@ -24,8 +24,8 @@ import {mockDevice} from '../utils';
  * real Connection, so every item goes through the same parsing a live player's
  * response does.
  *
- * Slot 15 is what an XDJ-AZ reported for Beatport Streaming in NP3-416: the
- * player answered, but nothing it sent became a title or an artist.
+ * Slot 15 is what an XDJ-AZ reported for direct Beatport Streaming in
+ * NP3-416. Its 0x0099 item carries the title and artist together.
  */
 
 const XDJ_AZ_STREAMING_SLOT = 0x0f as MediaSlot;
@@ -35,7 +35,8 @@ const ItemTypeCode = {
   TrackTitle: 0x0004,
   Artist: 0x0007,
   Duration: 0x000b,
-  Unregistered: 0x0099,
+  StreamingTrackMetadata: 0x0099,
+  Unregistered: 0x009a,
 };
 
 function makeLogger() {
@@ -142,24 +143,25 @@ describe('viaRemote on a lookup that comes back without a title or artist', () =
     );
   });
 
-  it('reports the raw fields of item types the Track has no place for', async () => {
+  it('uses native streaming title and artist metadata', async () => {
     const remote = replayingRemote([
       ...menu(Request.GetMetadata, [
-        menuItem(ItemTypeCode.Unregistered, {label1: 'Dancing', label2: 'Bittermind'}),
+        menuItem(ItemTypeCode.StreamingTrackMetadata, {
+          label1: 'Dancing',
+          label2: 'Bittermind',
+        }),
         menuItem(ItemTypeCode.Duration, {mainId: 300}),
       ]),
       ...menu(Request.GetTrackInfo, []),
     ]);
     const logger = makeLogger();
 
-    await viaRemote(remote, streamingTrack, logger);
+    const track = await viaRemote(remote, streamingTrack, logger);
 
-    const report = logger.warn.mock.calls[0][0] as string;
-    expect(report).toContain('2 of 2 item(s) received');
-    expect(report).toContain(
-      '0x0099 {"parentId":0,"mainId":0,"label1":"Dancing","label2":"Bittermind","artworkId":0}'
-    );
-    expect(report).toContain('0x000b {"duration":300}');
+    expect(track?.title).toBe('Dancing');
+    expect(track?.artist?.name).toBe('Bittermind');
+    expect(track?.duration).toBe(300);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('shortens an oversized item so the report stays readable', async () => {

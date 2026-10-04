@@ -57,6 +57,10 @@ export enum ItemType {
   MenuBit = 0x0093,
   MenuFilename = 0x0094,
   MenuHistory = 0x0095,
+  // Native streaming players return the track title and artist together in
+  // this otherwise undocumented item instead of the normal 0x0004/0x0007
+  // pair. Observed from direct Beatport streaming (NP3-591).
+  StreamingTrackMetadata = 0x0099,
   MenuAll = 0x00a0,
 
   TrackTitleAlbum = 0x0204,
@@ -126,6 +130,10 @@ const transformItem = {
     id: a.mainId,
     title: a.label1,
     artworkId: a.artworkId,
+  }),
+  [ItemType.StreamingTrackMetadata]: (a: ItemData) => ({
+    title: a.label1,
+    artist: a.label2,
   }),
   [ItemType.AlbumTitle]: mapIdName,
   [ItemType.Artist]: mapIdName,
