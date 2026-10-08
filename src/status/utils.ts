@@ -134,8 +134,10 @@ export function positionFromPacket(packet: Buffer): CDJStatus.PositionState | un
     return undefined;
   }
 
-  // Check if this is a position packet (subtype 0x00)
-  if (packet[0x20] !== 0x00) {
+  // Absolute-position packets use protocol kind 0x0b on UDP port 50001.
+  // Beat packets use kind 0x28 and share subtype 0x00, so checking the
+  // subtype alone would misread beat timing bytes as position fields.
+  if (packet[0x0a] !== 0x0b || packet[0x20] !== 0x00) {
     return undefined;
   }
 
