@@ -1,4 +1,4 @@
-import {makeCueLoopEntry} from 'src/localdb/utils';
+﻿import {makeCueLoopEntry} from 'src/localdb/utils';
 import {
   BeatGrid,
   CueAndLoop,
@@ -169,7 +169,7 @@ export function makeSongStructure(data: any): SongStructure {
   // `song_structure_entry`): `phraseNumber`, `beatNumber`, `fillIn`,
   // `fillInBeatNumber`, and `kind` is a `phrase_high` / `phrase_mid` /
   // `phrase_low` object whose `id` carries the raw kind value.
-  const phrases: Phrase[] = data.body.entries.map((entry: any) => {
+  const phrases: Phrase[] = (data.body.entries || []).map((entry: any) => {
     const kind: number = typeof entry.kind === 'object' ? entry.kind.id : entry.kind;
 
     const phrase: Phrase = {
@@ -235,3 +235,4 @@ export function makeVocalConfig(data: any): VocalConfig {
     thresholdHigh: data.body.thresholdHigh,
   };
 }
+
