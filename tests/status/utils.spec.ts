@@ -17,6 +17,14 @@ describe('statusFromPacket', () => {
     expect(() => statusFromPacket(packet)).toThrow();
   });
 
+  it('returns undefined for packets of 200-203 bytes (too short for the counter at 0xc8)', () => {
+    for (const length of [0xc8, 0xc9, 0xca, 0xcb]) {
+      const packet = Buffer.alloc(length);
+      Buffer.from(PROLINK_HEADER).copy(packet);
+      expect(statusFromPacket(packet)).toBeUndefined();
+    }
+  });
+
   it('only handles announce packets which are large enough', () => {
     const packet = Buffer.from([...PROLINK_HEADER, 0x00, 0x00]);
 

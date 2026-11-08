@@ -10,8 +10,9 @@ export function statusFromPacket(packet: Buffer) {
     throw new Error('CDJ status packet does not start with the expected header');
   }
 
-  // Rekordbox sends some short status packets that we can just ignore.
-  if (packet.length < 0xc8) {
+  // Rekordbox sends some short status packets that we can just ignore. The packet counter is a
+  // u32 at 0xc8, so anything shorter than 0xcc can't be read as a status.
+  if (packet.length < 0xcc) {
     return undefined;
   }
 
@@ -51,8 +52,8 @@ export function statusFromPacket(packet: Buffer) {
     beatsUntilCue,
     beat,
     // Player-type / capability byte (dysentery's "nx"). Guarded because the
-    // length check above only guarantees 0xc8; older/short packets may not
-    // reach 0xcc, in which case the field reads as 0 (version-gated to 0 anyway).
+    // length check above only guarantees 0xcc; older/short packets may not
+    // reach past 0xcc, in which case the field reads as 0 (version-gated to 0 anyway).
     deviceType: packet.length > 0xcc ? packet[0xcc] : 0,
     packetNum: packet.readUInt32BE(0xc8),
   };

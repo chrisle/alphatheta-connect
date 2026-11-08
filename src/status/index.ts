@@ -94,38 +94,44 @@ class StatusEmitter {
   ) => void;
 
   #handleStatus = (message: Buffer) => {
-    // Stagehand mixer state (type 0x39). Only parsed in Stagehand mode — the
-    // layout is DJM-A9-specific and applying it to other mixers misreads their
-    // faders (NP3-327). In 'active'/passive mode we fall back to the on-air
-    // flag, which is how on-air detection worked before Stagehand.
-    if (this.#stagehandMode && message.length >= 11 && message[10] === 0x39) {
-      const mixerState = mixerStateFromPacket(message);
-      if (mixerState !== undefined) {
-        return this.#emitter.emit('mixerState', mixerState);
+    // Anything can arrive on this UDP port; a packet the parsers can't read must not crash the
+    // process (they throw on a missing header). Same guard as the passive status handler.
+    try {
+      // Stagehand mixer state (type 0x39). Only parsed in Stagehand mode — the
+      // layout is DJM-A9-specific and applying it to other mixers misreads their
+      // faders (NP3-327). In 'active'/passive mode we fall back to the on-air
+      // flag, which is how on-air detection worked before Stagehand.
+      if (this.#stagehandMode && message.length >= 11 && message[10] === 0x39) {
+        const mixerState = mixerStateFromPacket(message);
+        if (mixerState !== undefined) {
+          return this.#emitter.emit('mixerState', mixerState);
+        }
       }
+
+      const status = statusFromPacket(message);
+
+      if (status !== undefined) {
+        return this.#emitter.emit('status', status);
+      }
+
+      // Media slot status is also reported on this socket
+      const mediaSlot = mediaSlotFromPacket(message);
+
+      if (mediaSlot !== undefined) {
+        return this.#emitter.emit('mediaSlot', mediaSlot);
+      }
+
+      // On-air status from mixer is also reported on this socket
+      const onAir = onAirFromPacket(message);
+
+      if (onAir !== undefined) {
+        return this.#emitter.emit('onAir', onAir);
+      }
+
+      return undefined;
+    } catch {
+      return undefined;
     }
-
-    const status = statusFromPacket(message);
-
-    if (status !== undefined) {
-      return this.#emitter.emit('status', status);
-    }
-
-    // Media slot status is also reported on this socket
-    const mediaSlot = mediaSlotFromPacket(message);
-
-    if (mediaSlot !== undefined) {
-      return this.#emitter.emit('mediaSlot', mediaSlot);
-    }
-
-    // On-air status from mixer is also reported on this socket
-    const onAir = onAirFromPacket(message);
-
-    if (onAir !== undefined) {
-      return this.#emitter.emit('onAir', onAir);
-    }
-
-    return undefined;
   };
 
   /**
