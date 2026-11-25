@@ -4,6 +4,7 @@ import {PROLINK_HEADER, STATUS_PORT} from 'src/constants';
 import DeviceManager from 'src/devices';
 import {type Logger, noopLogger} from 'src/logger';
 import {Device, DeviceType} from 'src/types';
+import {encodeStagehandNumber} from 'src/virtualcdj/stagehand';
 
 /**
  * Cadence of the Stagehand unicast keep-alive, in milliseconds.
@@ -35,10 +36,10 @@ function buildUnicastName(name: string): Uint8Array {
  * Build the Stagehand mixer keep-alive (`0x3a`, 40 bytes).
  *
  * Verified byte-for-byte against the real iOS Stagehand app unicasting to a
- * DJM-A9 at 4 Hz (Phase 4/5 captures §4.14.2). The 10-byte trailer
- * `21 02 00 fe 00 04 00 1c 00 00` is constant across every observed sample —
- * byte 33 (`0xfe`) is a VCDJ sentinel, not our runtime device number, so no
- * per-device bytes vary here.
+ * DJM-A9 at 4 Hz (Phase 4/5 captures §4.14.2). The trailer is `21 02 00 xx 00
+ * 04 00 1c 00 00` with `xx` at byte 33: the sender's device number, encoded
+ * (see {@link encodeStagehandNumber}). The app's constant `0xfe` decodes to
+ * its own number `0x3a`.
  */
 export function makeStagehandMixerHeartbeat(vcdj: Device): Uint8Array {
   const parts = [
@@ -48,7 +49,7 @@ export function makeStagehandMixerHeartbeat(vcdj: Device): Uint8Array {
     0x21,
     0x02,
     0x00,
-    0xfe,
+    0x00, // 33: device number, encoded below
     0x00,
     0x04,
     0x00,
@@ -56,7 +57,9 @@ export function makeStagehandMixerHeartbeat(vcdj: Device): Uint8Array {
     0x00,
     0x00, // 30-39: constant trailer
   ];
-  return Uint8Array.from(parts);
+  const packet = Uint8Array.from(parts);
+  encodeStagehandNumber(packet, 33, vcdj.id, vcdj.macAddr);
+  return packet;
 }
 
 /**
@@ -64,8 +67,9 @@ export function makeStagehandMixerHeartbeat(vcdj: Device): Uint8Array {
  *
  * Verified byte-for-byte against the real iOS Stagehand app unicasting to a
  * CDJ-3000 at ~2-4 Hz. Body (offsets 30-35) is `03 01 00 3a 00 00`: `0x03`
- * persona/channel, `0x01` device subkind, `0x00` flag, `0x3a` Stagehand
- * model-code stamp, two reserved bytes. Constant across every observed sample.
+ * persona/channel, `0x01` device subkind, `0x00` flag, `0x3a` the sender's
+ * device number (sent plain, which a player takes as it is), two reserved
+ * bytes. Constant across every observed sample.
  */
 export function makeStagehandPlayerHeartbeat(vcdj: Device): Uint8Array {
   const parts = [
@@ -75,9 +79,9 @@ export function makeStagehandPlayerHeartbeat(vcdj: Device): Uint8Array {
     0x03,
     0x01,
     0x00,
-    0x3a,
+    vcdj.id, // 33: device number
     0x00,
-    0x00, // 30-35: constant body
+    0x00, // 30-35: body
   ];
   return Uint8Array.from(parts);
 }

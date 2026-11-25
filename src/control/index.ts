@@ -1,14 +1,22 @@
 import {Socket} from 'dgram';
 
 import {BEAT_PORT, PROLINK_HEADER, STATUS_PORT} from 'src/constants';
+import {isPlaying} from 'src/mixstatus/utils';
+import type StatusEmitter from 'src/status';
 import {CDJStatus, Device, DeviceType} from 'src/types';
 import {buildName} from 'src/utils';
 import {udpSend} from 'src/utils/udp';
 
 import {LoadSource, makeLoadTrackPacket} from './load';
-import {makeStagehandPrefWritePacket, makeStagehandTransportPacket} from './stagehand';
+import {
+  makeStagehandConnectPacket,
+  makeStagehandPrefWritePacket,
+  makeStagehandTransportPacket,
+  StagehandKey,
+} from './stagehand';
 
 export {LoadSource, makeLoadTrackPacket} from './load';
+export {StagehandKey} from './stagehand';
 
 interface Options {
   hostDevice: Device;
@@ -50,32 +58,72 @@ export default class Control {
    */
   #statusSocket: Socket | null;
   /**
-   * Randomized correlation byte per session for Stagehand commands
+   * The status of every player, as last reported. A Stagehand has one
+   * play/pause key and no other way to start or stop a player, so `play` and
+   * `pause` read the state from here. Absent when the control service was
+   * built without a status emitter.
    */
-  #correlationByte: number;
+  #statusEmitter: StatusEmitter | null;
+  #statuses = new Map<number, CDJStatus.State>();
+  /**
+   * The players (by address) we have sent a Stagehand connect frame to. A
+   * player obeys our key events only after one.
+   */
+  #connected = new Map<string, Device>();
 
   constructor(
     beatSocket: Socket,
     hostDevice: Device,
-    statusSocket: Socket | null = null
+    statusSocket: Socket | null = null,
+    statusEmitter: StatusEmitter | null = null
   ) {
     this.#beatSocket = beatSocket;
     this.#statusSocket = statusSocket;
+    this.#statusEmitter = statusEmitter;
     this.#hostDevice = hostDevice;
-    this.#correlationByte = Math.floor(Math.random() * 256);
+    statusEmitter?.on('status', this.#onStatus);
+  }
+
+  #onStatus = (status: CDJStatus.State) => {
+    this.#statuses.set(status.deviceId, status);
+  };
+
+  /**
+   * Take control of a player as a Stagehand, so that it obeys our key events.
+   * Sent once, before the first key to a player, by everything below that
+   * sends keys; call it again if a player has been restarted.
+   */
+  async connect(device: Device) {
+    const p = makeStagehandConnectPacket(this.#hostDevice);
+    await udpSend(this.#beatSocket, p, BEAT_PORT, device.ip.address);
+    this.#connected.set(device.ip.address, device);
   }
 
   /**
-   * Send one Stagehand transport packet (0x07) carrying `op` with the press /
-   * release flag, for opcodes the named methods do not cover.
+   * Let go of every player we took control of, and stop following their
+   * status.
    */
-  async transport(device: Device, op: number, press: boolean) {
-    const p = makeStagehandTransportPacket(
-      this.#hostDevice,
-      op,
-      press,
-      this.#correlationByte
+  async disconnect() {
+    this.#statusEmitter?.off('status', this.#onStatus);
+
+    const players = [...this.#connected.values()];
+    this.#connected.clear();
+    const p = makeStagehandConnectPacket(this.#hostDevice, false);
+    await Promise.all(
+      players.map(d => udpSend(this.#beatSocket, p, BEAT_PORT, d.ip.address))
     );
+  }
+
+  /**
+   * Send one Stagehand key event (0x07) carrying `key` with the press /
+   * release flag, for keys the named methods do not cover. See
+   * {@link StagehandKey}.
+   */
+  async transport(device: Device, key: number, press: boolean) {
+    if (!this.#connected.has(device.ip.address)) {
+      await this.connect(device);
+    }
+    const p = makeStagehandTransportPacket(this.#hostDevice, key, press);
     await udpSend(this.#beatSocket, p, BEAT_PORT, device.ip.address);
   }
 
@@ -117,78 +165,67 @@ export default class Control {
   }
 
   /**
-   * Send Stagehand PLAY command (paired 0x0f and 0x14 packets)
+   * Press the Stagehand PLAY/PAUSE key once: it starts a stopped player and
+   * stops a playing one.
    */
-  async play(device: Device) {
-    const p1 = makeStagehandTransportPacket(
-      this.#hostDevice,
-      0x0f,
-      true,
-      this.#correlationByte
-    );
-    const p2 = makeStagehandTransportPacket(
-      this.#hostDevice,
-      0x14,
-      true,
-      this.#correlationByte
-    );
-    await udpSend(this.#beatSocket, p1, BEAT_PORT, device.ip.address);
-    await udpSend(this.#beatSocket, p2, BEAT_PORT, device.ip.address);
+  async togglePlayPause(device: Device) {
+    await this.transport(device, StagehandKey.PlayPause, true);
+    await this.transport(device, StagehandKey.PlayPause, false);
   }
 
   /**
-   * Send Stagehand PAUSE command (paired 0x14 packet)
+   * Start a player, unless it is playing already: the Stagehand key only
+   * toggles, so this goes by the last status the player reported, and throws
+   * when there has been none.
+   */
+  async play(device: Device) {
+    if (!isPlaying(this.#lastStatus(device))) {
+      await this.togglePlayPause(device);
+    }
+  }
+
+  /**
+   * Stop a player, unless it is stopped already. Like `play` it goes by the
+   * last status the player reported, and throws when there has been none.
    */
   async pause(device: Device) {
-    const p = makeStagehandTransportPacket(
-      this.#hostDevice,
-      0x14,
-      false,
-      this.#correlationByte
-    );
-    await udpSend(this.#beatSocket, p, BEAT_PORT, device.ip.address);
+    if (isPlaying(this.#lastStatus(device))) {
+      await this.togglePlayPause(device);
+    }
+  }
+
+  #lastStatus(device: Device) {
+    const status = this.#statuses.get(device.id);
+    if (status === undefined) {
+      throw new Error(
+        `no status heard from player ${device.id} yet; play and pause need to know whether it is playing`
+      );
+    }
+    return status;
   }
 
   /**
    * Send Stagehand SEEK forward command
    * @param press - true to start seek, false to release
    */
-  async seekForward(device: Device, press: boolean) {
-    const p = makeStagehandTransportPacket(
-      this.#hostDevice,
-      0x1a,
-      press,
-      this.#correlationByte
-    );
-    await udpSend(this.#beatSocket, p, BEAT_PORT, device.ip.address);
+  seekForward(device: Device, press: boolean) {
+    return this.transport(device, StagehandKey.SeekForward, press);
   }
 
   /**
    * Send Stagehand SEEK backward command
    * @param press - true to start seek, false to release
    */
-  async seekBackward(device: Device, press: boolean) {
-    const p = makeStagehandTransportPacket(
-      this.#hostDevice,
-      0x1b,
-      press,
-      this.#correlationByte
-    );
-    await udpSend(this.#beatSocket, p, BEAT_PORT, device.ip.address);
+  seekBackward(device: Device, press: boolean) {
+    return this.transport(device, StagehandKey.SeekBackward, press);
   }
 
   /**
    * Send Stagehand SKIP track command
    * @param press - true to start skip, false to release
    */
-  async skip(device: Device, press: boolean) {
-    const p = makeStagehandTransportPacket(
-      this.#hostDevice,
-      0x18,
-      press,
-      this.#correlationByte
-    );
-    await udpSend(this.#beatSocket, p, BEAT_PORT, device.ip.address);
+  skip(device: Device, press: boolean) {
+    return this.transport(device, StagehandKey.SkipForward, press);
   }
 
   /**

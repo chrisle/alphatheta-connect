@@ -1,9 +1,11 @@
 import StrictEventEmitter from 'strict-event-emitter-types';
 
-import {Socket} from 'dgram';
+import {RemoteInfo, Socket} from 'dgram';
 import {EventEmitter} from 'events';
 
+import type DeviceManager from 'src/devices';
 import {CDJStatus} from 'src/types';
+import {restoreSenderNumber} from 'src/virtualcdj/stagehand';
 
 import {positionFromPacket, vuFromPacket} from './utils';
 
@@ -39,12 +41,21 @@ class PositionEmitter {
   #stagehandMode: boolean;
 
   /**
+   * The devices announced on the link. In Stagehand mode a player's packets
+   * carry its number behind a checksum of its MAC, which is looked up here.
+   */
+  #deviceManager: DeviceManager | undefined;
+
+  /**
    * @param beatSocket A UDP socket to receive position packets on port 50001
    * @param stagehandMode Enable Stagehand-only VU-meter parsing. Off by default
    *   so non-Stagehand connections behave as they did before Stagehand.
+   * @param deviceManager Lets Stagehand mode restore the sender's device
+   *   number in a position packet, which players send hidden behind a checksum.
    */
-  constructor(beatSocket: Socket, stagehandMode = false) {
+  constructor(beatSocket: Socket, stagehandMode = false, deviceManager?: DeviceManager) {
     this.#stagehandMode = stagehandMode;
+    this.#deviceManager = deviceManager;
     beatSocket.on('message', this.#handlePosition);
   }
 
@@ -53,7 +64,12 @@ class PositionEmitter {
   off: Emitter['off'] = this.#emitter.removeListener.bind(this.#emitter);
   once: Emitter['once'] = this.#emitter.once.bind(this.#emitter);
 
-  #handlePosition = (message: Buffer) => {
+  #handlePosition = (received: Buffer, rinfo?: RemoteInfo) => {
+    const message =
+      this.#stagehandMode && this.#deviceManager !== undefined
+        ? restoreSenderNumber(received, rinfo?.address, this.#deviceManager.devices)
+        : received;
+
     // Stagehand VU meter (type 0x58) — only parsed in Stagehand mode.
     if (this.#stagehandMode && message.length >= 11 && message[10] === 0x58) {
       const vu = vuFromPacket(message);

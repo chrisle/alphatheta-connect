@@ -1,6 +1,7 @@
 import {PROLINK_HEADER} from 'src/constants';
 import {Device} from 'src/types';
 import {buildName} from 'src/utils';
+import {encodeStagehandNumber} from 'src/virtualcdj/stagehand';
 
 /**
  * The name field of a Stagehand unicast frame: 19 bytes, one shorter than the
@@ -11,26 +12,96 @@ function buildUnicastName(device: Device): Uint8Array {
 }
 
 /**
- * Generates a Stagehand transport control packet (0x07, 48 bytes).
+ * The command word at the start of a Stagehand command packet's body.
+ */
+export enum StagehandCommand {
+  /** Key events: buttons pressed or released on the player. */
+  Keys = 0,
+  /**
+   * The sender takes control. A player obeys key events from a device number
+   * only after a connect frame from it.
+   */
+  Connect = 1,
+  /** The sender lets go. */
+  Disconnect = 2,
+}
+
+/**
+ * The key numbers of a Stagehand key event (packet 0x07, {@link
+ * StagehandCommand.Keys}).
  *
- * Byte for byte what the iPad app sends a CDJ-3000 (captured 2026-05-23,
+ * Only `PlayPause` is confirmed on hardware, from a Mac to two CDJ-3000s on
+ * firmware 3.22 (one of them also on stock firmware), and `SkipBackward`
+ * moved a player's playhead there as well. The others are the buttons the
+ * player's firmware maps those numbers to, read from the firmware and not
+ * tried on hardware. `SeekForward`, `SeekBackward` and the skips are also what
+ * the iPad app was captured sending.
+ */
+export const StagehandKey = {
+  /** From the firmware: the QUANTIZE button. */
+  Quantize: 0x0a,
+  /** From the firmware: SLIP. */
+  Slip: 0x0b,
+  /** From the firmware: MASTER. */
+  Master: 0x0c,
+  /** From the firmware: SYNC. */
+  Sync: 0x0d,
+  /** From the firmware: MASTER TEMPO. */
+  MasterTempo: 0x0e,
+  /** From the firmware: tempo reset. The app sends it just before PlayPause. */
+  TempoReset: 0x0f,
+  /**
+   * One toggle: a press starts a stopped player and stops a playing one, there
+   * is no separate pause. It acts on the press.
+   */
+  PlayPause: 0x14,
+  /**
+   * From the firmware: CUE. Pressed on a playing player it showed no change in
+   * the status; why is not known.
+   */
+  Cue: 0x15,
+  /** From the firmware: REVERSE. */
+  Reverse: 0x16,
+  /** From the firmware: SLIP REVERSE. */
+  SlipReverse: 0x17,
+  /** Track search (the app's skip forward). The direction is the app's, not confirmed. */
+  SkipForward: 0x18,
+  /** Track search (the app's skip backward). Moved a player off the end of its track. */
+  SkipBackward: 0x19,
+  /** Search forward, held while pressed. */
+  SeekForward: 0x1a,
+  /** Search backward, held while pressed. */
+  SeekBackward: 0x1b,
+  /** From the firmware: loop in. */
+  LoopIn: 0x1e,
+  /** From the firmware: loop out. */
+  LoopOut: 0x1f,
+  /** From the firmware: reloop / exit. */
+  Reloop: 0x20,
+} as const;
+
+/**
+ * Generates a Stagehand command packet (0x07).
+ *
+ * The iPad app's packet to a CDJ-3000 (captured 2026-05-23,
  * `stagehand-allproto-20260523T142615.pcap`, pinned in the tests): the
- * unicast header `03 01 00`, a byte that varies per command, the length
- * `0030`, then `3a`, `01`, the opcode and the press flag each in their own
- * 16-bit slot.
+ * unicast header `03 01 00`, the sender's device number in byte 33 (encoded,
+ * see {@link encodeStagehandNumber}; this is the byte that looked like a
+ * per-command value), the total length at 34, then the body: 16-bit command,
+ * 16-bit device number, 16-bit count and `count` entries of 16-bit key,
+ * 8-bit kind (0), 8-bit state (1 pressed, 0 released) and 16-bit value (0).
  *
  * @param hostDevice - The Stagehand device posing as sender
- * @param op - The command opcode (e.g. 0x0f, 0x14, 0x18, 0x19, 0x1a, 0x1b)
- * @param press - Whether the action is press (true) or release (false)
- * @param correlationByte - The per-session correlation byte
+ * @param command - What the packet is (key events, connect or disconnect)
+ * @param key - For key events, the one key and whether it is pressed
  */
-export function makeStagehandTransportPacket(
+function makeStagehandCommandPacket(
   hostDevice: Device,
-  op: number,
-  press: boolean,
-  correlationByte: number
+  command: StagehandCommand,
+  key?: {key: number; press: boolean}
 ): Uint8Array {
-  const packet = new Uint8Array(48);
+  const packet = new Uint8Array(key === undefined ? 42 : 48);
+  const view = new DataView(packet.buffer);
 
   // 0-9: magic header
   packet.set(PROLINK_HEADER, 0);
@@ -46,26 +117,57 @@ export function makeStagehandTransportPacket(
   packet[31] = 0x01;
   packet[32] = 0x00;
 
-  // 33: per-session correlation byte
-  packet[33] = correlationByte;
+  // 34-35: packet length
+  view.setUint16(34, packet.length);
 
-  // 34-35: packet length 0x0030 (48 bytes)
-  packet[34] = 0x00;
-  packet[35] = 0x30;
+  // 36-41: command, device number, number of keys
+  view.setUint16(36, command);
+  view.setUint16(38, hostDevice.id);
+  view.setUint16(40, key === undefined ? 0 : 1);
 
-  // 39: Stagehand sub-id 0x3a
-  packet[39] = 0x3a;
+  // 42-47: the key, kind 0, state, value 0
+  if (key !== undefined) {
+    view.setUint16(42, key.key);
+    packet[45] = key.press ? 0x01 : 0x00;
+  }
 
-  // 41: 0x01
-  packet[41] = 0x01;
-
-  // 43: command opcode
-  packet[43] = op;
-
-  // 45: press/release flag
-  packet[45] = press ? 0x01 : 0x00;
+  // 33: our device number, last, since the packet's bytes are in its checksum
+  encodeStagehandNumber(packet, 33, hostDevice.id, hostDevice.macAddr);
 
   return packet;
+}
+
+/**
+ * Generates a Stagehand key packet: one key pressed or released.
+ *
+ * @param hostDevice - The Stagehand device posing as sender
+ * @param key - The key number, see {@link StagehandKey}
+ * @param press - Whether the action is press (true) or release (false)
+ */
+export function makeStagehandTransportPacket(
+  hostDevice: Device,
+  key: number,
+  press: boolean
+): Uint8Array {
+  return makeStagehandCommandPacket(hostDevice, StagehandCommand.Keys, {key, press});
+}
+
+/**
+ * Generates the packet that opens (or closes) a Stagehand's control of a
+ * player (0x07, 42 bytes). A player ignores key events from a device number
+ * that has not sent one.
+ *
+ * @param hostDevice - The Stagehand device posing as sender
+ * @param connect - true to connect, false to disconnect
+ */
+export function makeStagehandConnectPacket(
+  hostDevice: Device,
+  connect = true
+): Uint8Array {
+  return makeStagehandCommandPacket(
+    hostDevice,
+    connect ? StagehandCommand.Connect : StagehandCommand.Disconnect
+  );
 }
 
 /**
@@ -98,8 +200,8 @@ export function makeStagehandPrefWritePacket(
   packet[31] = 0x01;
   packet[32] = 0x00;
 
-  // 33: Stagehand sub-id constant 0x3a
-  packet[33] = 0x3a;
+  // 33: our device number, sent plain
+  packet[33] = hostDevice.id;
 
   // 34-35: body length 0x0050 (80 bytes)
   packet[34] = 0x00;

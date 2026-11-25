@@ -6,29 +6,23 @@
  */
 import {NetworkInterfaceInfoIPv4, networkInterfaces} from 'os';
 
-import {LoadSource} from 'src/control';
+import {LoadSource, StagehandKey} from 'src/control';
 import {Logger} from 'src/logger';
 import {bringOnlineStagehand, NetworkConfig, ProlinkNetwork} from 'src/network';
 import {CDJStatus, Device, DeviceType, MediaSlot, MediaSlotInfo} from 'src/types';
 import {getMatchingInterface} from 'src/utils';
 
 /**
- * The Stagehand transport opcodes (packet 0x07) the iPad app was captured
- * sending, besides play (0x0f then 0x14 pressed) and pause (0x14 released),
- * which `Control` sends itself. These are held while pressed.
+ * The Stagehand keys (packet 0x07) the iPad app was captured sending, besides
+ * the PLAY/PAUSE toggle, which `Control` sends itself. These are held while
+ * pressed. All of {@link StagehandKey} is there for `transport`.
  */
 export const TransportOp = {
-  SkipForward: 0x18,
-  SkipBackward: 0x19,
-  SeekForward: 0x1a,
-  SeekBackward: 0x1b,
+  SkipForward: StagehandKey.SkipForward,
+  SkipBackward: StagehandKey.SkipBackward,
+  SeekForward: StagehandKey.SeekForward,
+  SeekBackward: StagehandKey.SeekBackward,
 } as const;
-
-/**
- * The device numbers the Stagehand app was seen using: 141..=211.
- */
-const STAGEHAND_FIRST_NUMBER = 141;
-const STAGEHAND_NUMBER_COUNT = 71;
 
 const TAP_MS = 100;
 
@@ -51,7 +45,7 @@ export class CueUnknownError extends RemoteError {
 export interface RemoteOptions {
   /** Interface name or address; default: the one the first player heard is on. */
   iface?: string;
-  /** Device number 141..211; default: one derived from the interface's MAC. */
+  /** Device number 0x36..0x3f (54..63); default: 0x3a, the iPad app's. */
   number?: number;
   /** The Stagehand opcode for CUE, once one is found. */
   cueOp?: number;
@@ -89,18 +83,6 @@ function resolveIface(hint: string): NetworkInterfaceInfoIPv4 {
     )
     .join(', ');
   throw new RemoteError(`no interface "${hint}"; available: ${available}`);
-}
-
-/**
- * A device number that does not change between runs. A CDJ-3000 keeps one
- * record per peer address and ignores a later claim from that address under
- * another number or MAC until it reboots, so a random number per run may
- * never be served.
- */
-function numberFor(iface: NetworkInterfaceInfoIPv4) {
-  const mac = iface.mac.split(':').map(b => parseInt(b, 16));
-  const last = mac[5] ?? 0;
-  return STAGEHAND_FIRST_NUMBER + (last % STAGEHAND_NUMBER_COUNT);
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -147,7 +129,7 @@ export class Remote {
       iface = match;
     }
 
-    network.configure({iface, vcdjId: opts.number ?? numberFor(iface)});
+    network.configure({iface, vcdjId: opts.number});
     network.connect();
     if (!network.isConnected()) {
       throw new RemoteError('failed to connect to the link');
