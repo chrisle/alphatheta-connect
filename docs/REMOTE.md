@@ -16,8 +16,8 @@ yarn build                                       # here, so lib/ has the exports
 ```
 
 Options for `serve`: `--iface <name|ip>` (default: the interface the first
-player heard is on), `--number <141-211>` (default: derived from the
-interface's MAC, so it is the same on every run), `--port` (5030), `--booth`
+player heard is on), `--number <54-63>` (default: 58, `0x3a`, the iPad app's
+number), `--port` (5030), `--booth`
 (`DJ Booth`), `--cue-op <byte>`, `--no-hue`, `--verbose`. Each has an
 environment variable (`ALPHATHETA_REMOTE_IFACE`, `_NUMBER`, `_PORT`, `_GROUP`,
 `_CUE_OP`). `HUE_BRIDGE` and `HUE_APP_KEY` stand in for the paired config file
@@ -74,32 +74,25 @@ The same is available in-process: `Remote.join(...)` and
 
 ## What is not, yet
 
-- **Transport (play, pause, ff, rew, skip).** The packets are now byte for byte
-  what the iPad app sends (captured, pinned in `tests/control`), but the two
-  CDJ-3000s on the test LAN did not act on them from this host. The players
-  also did not answer the Stagehand heartbeat (`0x68`) with their `0x69` state
-  the way they do for the app. The library's own note applies: a CDJ-3000
-  keeps one record per peer address and ignores a later claim from that
-  address under another number or MAC until it reboots, and this host had
-  presented several identities that day (rekordbox, then Stagehand under
-  random numbers). The number is now stable per interface. The next step is a
-  player power-cycle (which is what `POST /booth/off` / `on` is for) and a
-  retest.
+- **Transport (play, pause, ff, rew, skip): explained, see
+  [STAGEHAND.md 6.3](STAGEHAND.md#63-how-a-player-accepts-a-stagehand).** The
+  players ignored the packets, and never answered the heartbeat (`0x68`) with
+  their `0x69`, because the remote announced a number a player does not take
+  from a Stagehand (the keep-alive carries it behind a checksum, and the
+  random 141-211 were that checksum's output, not numbers) and sent keys with
+  no connect frame first. With number `0x3a` encoded as the app does, both
+  players answered and streamed status, and play and pause worked from a
+  second device. Play and pause now press the one PLAY/PAUSE key, and only
+  when the player's last status says it would change; the other keys are
+  untested.
 
-  Retested 2026-09-19 from a second Mac (chris-m2-mac, wired, a fresh
-  address the players had no record of, the stable number): still not
-  honoured, and still no `0x69` to the heartbeat and no `0x0b` push, while
-  `load` from the same identity worked. Also tried, each alone, by replaying
-  the pinned frames from a script: the keep-alive's member counter at
-  `0x30` set to the number of other devices (the iPad's value); a fresh
-  ephemeral source port per unicast datagram, as the iPad sends; the
-  broadcasts from ephemeral ports too (then the player sent the host nothing
-  at all); a fresh number and claim MAC per run. None paired. The mixer-style
-  fader-start packet (`0x02` on 50001) is ignored as well. So the stale-record
-  theory is not the whole story. Every iPad capture had a DJM-A9 on the
-  network; this LAN has a DJM-V5, which never sends the paired `06 02`
-  keep-alive - whether pairing needs the A9 is the open question
-  (hypothesis, untested).
+  Tried on 2026-09-19 before the cause was found, each alone and without
+  effect: the keep-alive's member counter at `0x30` set to the number of other
+  devices (the iPad's value); a fresh ephemeral source port per unicast
+  datagram, as the iPad sends; the broadcasts from ephemeral ports too (then
+  the player sent the host nothing at all); a fresh number and claim MAC per
+  run; a second Mac with a fresh address; the mixer-style fader-start packet
+  (`0x02` on 50001). `load` from the same identity worked throughout.
 
   What *does* break `load`: claiming from the remote's address under other
   numbers or MACs while the players are up (a probe script did, 2026-09-19).
@@ -107,5 +100,6 @@ The same is available in-process: `Remote.join(...)` and
   identity but dropped its Load Track, and served the newer numbers nothing.
   Recovery is a player power-cycle. One identity per address, always.
 - **Cue.** The Stagehand app has no cue button, so no cue opcode was captured.
-  `--cue-op` takes one once it is found; `POST /players/{n}/op` is there to
-  probe for it.
+  Key `0x15` is CUE by the player's firmware, but pressed on a playing player
+  it showed no change in the status (why is not known). `--cue-op` takes one;
+  `POST /players/{n}/op` is there to probe for it.
