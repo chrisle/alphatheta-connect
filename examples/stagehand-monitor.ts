@@ -17,11 +17,10 @@
  * Options:
  *   --iface <name|ip>   Interface to join on. Default: wait for the first peer
  *                       announcement and use the interface that matches it.
- *   --id <141-211>      Stagehand device number. Default: random in range.
- *                       Pin it across restarts: a CDJ-3000 records the peer by
- *                       identity and ignores a differing number from the same
- *                       IP, so a fresh random number on a re-run may never get
- *                       the status stream until the player next reboots.
+ *   --id <54-63>        Stagehand device number, 0x36 to 0x3f. Default: 58
+ *                       (0x3a), the iPad app's. Keep it across restarts: a
+ *                       CDJ-3000 records the peer by identity and may ignore
+ *                       a differing number from the same IP.
  *   --name <name>       Announced device name. Default: "Stagehand".
  *   --player <1-6>      Player targeted by keyboard commands. Default: the
  *                       first CDJ discovered.
@@ -101,7 +100,7 @@ function parseArgs(argv: string[]): Options {
       case '--help':
       case '-h':
         console.log(
-          'Usage: stagehand-monitor [--iface <name|ip>] [--id <141-211>] [--name <name>] [--player <1-6>] [--json] [--verbose] [--quiet]'
+          'Usage: stagehand-monitor [--iface <name|ip>] [--id <54-63>] [--name <name>] [--player <1-6>] [--json] [--verbose] [--quiet]'
         );
         process.exit(0);
         break;

@@ -1,12 +1,14 @@
 import {Mutex} from 'async-mutex';
 import StrictEventEmitter from 'strict-event-emitter-types';
 
-import {Socket} from 'dgram';
+import {RemoteInfo, Socket} from 'dgram';
 import {EventEmitter} from 'events';
 
 import {STATUS_PORT} from 'src/constants';
+import type DeviceManager from 'src/devices';
 import {CDJStatus, MediaSlotInfo} from 'src/types';
 import {udpSend} from 'src/utils/udp';
+import {restoreSenderNumber} from 'src/virtualcdj/stagehand';
 
 import {makeMediaSlotRequest} from './media';
 import {
@@ -58,6 +60,11 @@ class StatusEmitter {
    * Only true when the network was brought online in 'stagehand' mode.
    */
   #stagehandMode: boolean;
+  /**
+   * The devices announced on the link. In Stagehand mode a player's packets
+   * carry its number behind a checksum of its MAC, which is looked up here.
+   */
+  #deviceManager: DeviceManager | undefined;
 
   /**
    * @param statusSocket A UDP socket to receive CDJ status packets on
@@ -66,10 +73,17 @@ class StatusEmitter {
    *   before Stagehand was added — the 0x39 layout is reverse-engineered from a
    *   DJM-A9 and must not be applied to other mixers (e.g. XDJ-AZ) that were
    *   never captured.
+   * @param deviceManager Lets Stagehand mode restore the sender's device
+   *   number in a status packet, which players send hidden behind a checksum.
    */
-  constructor(statusSocket: Socket, stagehandMode = false) {
+  constructor(
+    statusSocket: Socket,
+    stagehandMode = false,
+    deviceManager?: DeviceManager
+  ) {
     this.#statusSocket = statusSocket;
     this.#stagehandMode = stagehandMode;
+    this.#deviceManager = deviceManager;
     statusSocket.on('message', this.#handleStatus);
   }
 
@@ -93,7 +107,12 @@ class StatusEmitter {
     listener: StatusEvents[E]
   ) => void;
 
-  #handleStatus = (message: Buffer) => {
+  #handleStatus = (received: Buffer, rinfo?: RemoteInfo) => {
+    const message =
+      this.#stagehandMode && this.#deviceManager !== undefined
+        ? restoreSenderNumber(received, rinfo?.address, this.#deviceManager.devices)
+        : received;
+
     // Stagehand mixer state (type 0x39). Only parsed in Stagehand mode — the
     // layout is DJM-A9-specific and applying it to other mixers misreads their
     // faders (NP3-327). In 'active'/passive mode we fall back to the on-air

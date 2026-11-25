@@ -7,6 +7,7 @@ import {EventEmitter} from 'events';
 import {STATUS_PORT} from 'src/constants';
 import DeviceManager from 'src/devices';
 import {Device, DeviceType} from 'src/types';
+import {decodeStagehandNumber} from 'src/virtualcdj/stagehand';
 
 import {
   makeStagehandMixerHeartbeat,
@@ -48,11 +49,16 @@ function makeDevice(overrides: Partial<Device> = {}): Device {
   };
 }
 
+// The iPad's MAC is not known, only that the last three bytes of it sum to
+// 0x36 (mod 128): with that, the captured mixer frame's `fe` is the number 0x3a.
+const STAGEHAND_MAC = new Uint8Array([0xc8, 0x3d, 0xfc, 0x10, 0x12, 0x14]);
+
 function stagehandVcdj(): Device {
   return makeDevice({
-    id: 200,
+    id: 0x3a,
     name: 'Stagehand',
     type: DeviceType.Stagehand,
+    macAddr: STAGEHAND_MAC,
     ip: new Address4('192.168.1.130'),
   });
 }
@@ -79,20 +85,35 @@ describe('Stagehand heartbeat packets', () => {
     expect(Array.from(packet.subarray(20, 30))).toEqual(Array(10).fill(0));
   });
 
+  it('carries the sender number in byte 33, encoded', () => {
+    const vcdj = stagehandVcdj();
+    const packet = makeStagehandMixerHeartbeat(vcdj);
+    expect(packet[33]).toBe(0xfe);
+    expect(decodeStagehandNumber(packet, 33, vcdj.macAddr)).toBe(0x3a);
+
+    // another name changes the checksum, so the byte; the number does not
+    const named = makeStagehandMixerHeartbeat({...vcdj, name: 'Booth'});
+    expect(named[33]).not.toBe(0xfe);
+    expect(decodeStagehandNumber(named, 33, vcdj.macAddr)).toBe(0x3a);
+  });
+
+  it('player heartbeat carries the sender number plain in byte 33', () => {
+    const packet = makeStagehandPlayerHeartbeat({...stagehandVcdj(), id: 0x37});
+    expect(packet[33]).toBe(0x37);
+  });
+
   it('truncates an over-long name to the 19-byte field without overrunning', () => {
-    const packet = makeStagehandMixerHeartbeat(
-      stagehandVcdj() // replaced below
-    );
     const longName = makeStagehandMixerHeartbeat({
       ...stagehandVcdj(),
       name: 'A'.repeat(40),
     });
     expect(longName.length).toBe(40);
-    // Trailer still lands at offset 30.
-    expect(Array.from(longName.subarray(30))).toEqual([
-      0x21, 0x02, 0x00, 0xfe, 0x00, 0x04, 0x00, 0x1c, 0x00, 0x00,
+    // Trailer still lands at offset 30; byte 33 is the encoded number.
+    expect(Array.from(longName.subarray(30, 33))).toEqual([0x21, 0x02, 0x00]);
+    expect(Array.from(longName.subarray(34))).toEqual([
+      0x00, 0x04, 0x00, 0x1c, 0x00, 0x00,
     ]);
-    void packet;
+    expect(decodeStagehandNumber(longName, 33, STAGEHAND_MAC)).toBe(0x3a);
   });
 });
 
@@ -147,7 +168,7 @@ describe('StagehandHeartbeat', () => {
   });
 
   it('never heartbeats itself or other Stagehand / rekordbox peers', () => {
-    const self = stagehandVcdj(); // id 200
+    const self = stagehandVcdj(); // id 0x3a
     const otherStagehand = makeDevice({
       id: 201,
       type: DeviceType.Stagehand,

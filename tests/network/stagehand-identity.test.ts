@@ -6,7 +6,11 @@ import DeviceManager from 'src/devices';
 import {ProlinkNetwork} from 'src/network';
 import StatusEmitter from 'src/status';
 import PositionEmitter from 'src/status/position';
-import {getStagehandMac, STAGEHAND_STARTUP_INTERVAL} from 'src/virtualcdj/stagehand';
+import {
+  decodeStagehandNumber,
+  getStagehandMac,
+  STAGEHAND_STARTUP_INTERVAL,
+} from 'src/virtualcdj/stagehand';
 
 // The database services drag in the kaitai-compiled PDB parser, which has no
 // jest build; connect() only constructs them, so stand-ins are enough here.
@@ -35,17 +39,25 @@ function fakeSocket() {
     send: jest.Mock;
     close: jest.Mock;
   };
-  ee.send = jest.fn();
-  ee.close = jest.fn((cb?: () => void) => cb?.());
+  ee.send = jest.fn((...args: unknown[]) => {
+    const callback = args[args.length - 1];
+    if (typeof callback === 'function') {
+      callback(null, 0);
+    }
+  });
+  ee.close = jest.fn((cb?: () => void) => {
+    cb?.();
+    ee.emit('close');
+  });
   return ee;
 }
 
-function makeNetwork() {
+function makeNetwork(vcdjId?: number) {
   const announceSocket = fakeSocket();
   const beatSocket = fakeSocket();
   const statusSocket = fakeSocket();
   const network = new ProlinkNetwork({
-    config: {iface, connectMethod: 'stagehand'},
+    config: {iface, connectMethod: 'stagehand', vcdjId},
     announceSocket: announceSocket as unknown as Socket,
     beatSocket: beatSocket as unknown as Socket,
     statusSocket: statusSocket as unknown as Socket,
@@ -53,7 +65,7 @@ function makeNetwork() {
     statusEmitter: new StatusEmitter(statusSocket as unknown as Socket, true),
     positionEmitter: new PositionEmitter(beatSocket as unknown as Socket, true),
   });
-  return {network, announceSocket};
+  return {network, announceSocket, beatSocket};
 }
 
 /** Announce-socket packets of one type, as sent so far. */
@@ -100,5 +112,56 @@ describe('Stagehand identity across reconnects', () => {
     expect(Array.from(secondKeepAlive.subarray(38, 44))).toEqual(
       Array.from(firstKeepAlive.subarray(38, 44))
     );
+  });
+
+  it('announces as 0x3a, hidden behind the checksum, unless told otherwise', () => {
+    const {network, announceSocket} = makeNetwork();
+    network.connect();
+    jest.advanceTimersByTime(STAGEHAND_STARTUP_INTERVAL * 7);
+
+    const [claim] = sentOfType(announceSocket, 0x02);
+    const [keepAlive] = sentOfType(announceSocket, 0x06);
+    expect(claim[46]).toBe(0x3a);
+    expect(keepAlive[36] & 0x80).toBe(0x80);
+    expect(decodeStagehandNumber(keepAlive, 36, getStagehandMac(iface))).toBe(0x3a);
+    network.disconnect();
+  });
+
+  it('announces a device number from 0x36 to 0x3f that it is given', () => {
+    const {network, announceSocket} = makeNetwork(0x37);
+    network.connect();
+    jest.advanceTimersByTime(STAGEHAND_STARTUP_INTERVAL * 7);
+
+    const [keepAlive] = sentOfType(announceSocket, 0x06);
+    expect(decodeStagehandNumber(keepAlive, 36, getStagehandMac(iface))).toBe(0x37);
+    network.disconnect();
+  });
+
+  it.each([141, 0x35, 0x40, 211])(
+    'refuses the device number %i, which no player takes from a Stagehand',
+    id => {
+      const {network} = makeNetwork(id);
+      expect(() => network.connect()).toThrow(/device number must be 54 to 63/);
+    }
+  );
+
+  it('lets go of the players it sent keys to before its sockets close', async () => {
+    const {network, beatSocket} = makeNetwork();
+    network.connect();
+    const control = network.control!;
+    const player = {ip: {address: '192.168.1.35'}} as Parameters<
+      typeof control.transport
+    >[0];
+
+    await control.transport(player, 0x1a, true);
+    beatSocket.send.mockClear();
+    network.disconnect();
+    await network.close();
+
+    const sent = beatSocket.send.mock.calls.map(([packet]) => packet as Uint8Array);
+    expect(sent).toHaveLength(1);
+    expect(sent[0][10]).toBe(0x07);
+    expect(Buffer.from(sent[0]).readUInt16BE(36)).toBe(2); // disconnect
+    expect(beatSocket.close).toHaveBeenCalled();
   });
 });

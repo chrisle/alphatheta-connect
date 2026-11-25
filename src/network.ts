@@ -20,9 +20,11 @@ import {SpanStatus} from 'src/utils/telemetry';
 import {udpBind, udpClose} from 'src/utils/udp';
 import {
   Announcer,
-  generateStagehandDeviceId,
   getVirtualCDJ,
   getVirtualStagehand,
+  STAGEHAND_DEVICE_ID,
+  STAGEHAND_MAX_DEVICE_ID,
+  STAGEHAND_MIN_DEVICE_ID,
   StagehandAnnouncer,
   StagehandHeartbeat,
 } from 'src/virtualcdj';
@@ -37,6 +39,9 @@ export interface NetworkConfig {
   iface: NetworkInterfaceInfoIPv4;
   /**
    * The ID of the virtual CDJ or Stagehand device to pose as.
+   *
+   * A Stagehand must be 0x36 to 0x3f (54 to 63); it defaults to 0x3a, the
+   * number the iPad app uses. Players take no other number from a Stagehand.
    *
    * IMPORTANT:
    *
@@ -191,8 +196,8 @@ export async function bringOnline(config?: NetworkConfig) {
   const stagehandMode = config?.connectMethod === 'stagehand';
 
   const deviceManager = new DeviceManager(announceSocket);
-  const statusEmitter = new StatusEmitter(statusSocket, stagehandMode);
-  const positionEmitter = new PositionEmitter(beatSocket, stagehandMode);
+  const statusEmitter = new StatusEmitter(statusSocket, stagehandMode, deviceManager);
+  const positionEmitter = new PositionEmitter(beatSocket, stagehandMode, deviceManager);
 
   tx.finish();
 
@@ -235,6 +240,7 @@ export class ProlinkNetwork {
   #logger: Logger;
 
   #config: null | NetworkConfig;
+  #goodbye: Promise<void> = Promise.resolve();
   #connection: null | ConnectionService;
   #mixstatus: null | MixstatusProcessor;
 
@@ -310,7 +316,7 @@ export class ProlinkNetwork {
 
     const defaultId =
       this.#config?.connectMethod === 'stagehand'
-        ? generateStagehandDeviceId()
+        ? (this.#config.vcdjId ?? STAGEHAND_DEVICE_ID)
         : DEFAULT_VCDJ_ID;
     this.#config = {...this.#config, vcdjId: defaultId, iface};
     tx.finish();
@@ -337,7 +343,18 @@ export class ProlinkNetwork {
     // getStagehandMac).
     const vcdjId =
       this.#config.vcdjId ??
-      (connectMethod === 'stagehand' ? generateStagehandDeviceId() : DEFAULT_VCDJ_ID);
+      (connectMethod === 'stagehand' ? STAGEHAND_DEVICE_ID : DEFAULT_VCDJ_ID);
+    if (
+      connectMethod === 'stagehand' &&
+      !(vcdjId >= STAGEHAND_MIN_DEVICE_ID && vcdjId <= STAGEHAND_MAX_DEVICE_ID)
+    ) {
+      tx.setStatus(SpanStatus.InvalidArgument);
+      tx.finish();
+
+      throw new Error(
+        `A Stagehand's device number must be ${STAGEHAND_MIN_DEVICE_ID} to ${STAGEHAND_MAX_DEVICE_ID}, got ${vcdjId}`
+      );
+    }
     this.#config.vcdjId = vcdjId;
     const vcdjName =
       this.#config.vcdjName ?? (connectMethod === 'stagehand' ? 'Stagehand' : undefined);
@@ -403,7 +420,12 @@ export class ProlinkNetwork {
     const database = new Database(localdb, remotedb, this.#deviceManager, this.#logger);
 
     // Create controller service
-    const control = new Control(this.#beatSocket, vcdj, this.#statusSocket);
+    const control = new Control(
+      this.#beatSocket,
+      vcdj,
+      this.#statusSocket,
+      this.#statusEmitter
+    );
 
     this.#state = NetworkState.Connected;
     this.#connection = {vcdj, announcer, heartbeat, control, remotedb, localdb, database};
@@ -423,6 +445,12 @@ export class ProlinkNetwork {
     this.#connection?.announcer.stop();
     this.#connection?.heartbeat?.stop();
 
+    // Let go of the players we sent Stagehand keys to; close() waits for the
+    // frames to leave before it closes the sockets.
+    this.#goodbye = (this.#connection?.control.disconnect() ?? Promise.resolve()).catch(
+      err => this.#logger.debug(`Stagehand disconnect failed: ${err.message}`)
+    );
+
     // Disconnect devices from the remote and local databases
     for (const device of this.deviceManager.devices.values()) {
       this.remotedb?.disconnectFromDevice(device);
@@ -435,7 +463,8 @@ export class ProlinkNetwork {
   /**
    * Close UDP sockets.
    */
-  close() {
+  async close() {
+    await this.#goodbye;
     return Promise.all([
       udpClose(this.#announceSocket),
       udpClose(this.#statusSocket),

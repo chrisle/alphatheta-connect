@@ -1,5 +1,5 @@
 export type {LoadSource} from './control';
-export {default as Control} from './control';
+export {default as Control, StagehandKey} from './control';
 export * from './entities';
 export * from './mixstatus';
 export * from './network';
